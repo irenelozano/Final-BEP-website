@@ -1,0 +1,32 @@
+SPARTA (24 Sep 2025)
+Running on 4 MPI task(s)
+Created orthogonal box = (0 0 0) to (0.0005 0.0005 0.0005)
+WARNING: Could not acquire nearby ghost cells b/c grid partition is not clumped (../grid.cpp:473)
+Created 64000 child grid cells
+  CPU time = 0.00410224 secs
+  create/ghost percent = 58.8088 41.1912
+Balance grid migrated 48000 cells
+  CPU time = 0.0165087 secs
+  reassign/sort/migrate/ghost percent = 32.9725 1.02608 42.5889 23.4125
+Reading surface file ...
+  192 triangles
+  0.000245 0.000255 xlo xhi
+  0.000245 0.000255 ylo yhi
+  0.000245 0.000255 zlo zhi
+  1.37386e-06 min triangle edge length
+  8.32156e-13 min triangle area
+  8 0 = cells overlapping surfs, overlap cells with unmarked corner pts
+  63992 0 8 = cells outside/inside/overlapping surfs
+  8 = surf cells with 1,2,etc splits
+  1.24999513661453e-10 1.24999513661465e-10 = cell-wise and global flow volume
+  CPU time = 0.0204181 secs
+  read/check/sort/surf2grid/ghost/inout/particle percent = 51.5305 7.21824 3.94541 26.0795 11.2264 7.92117 0.00990298
+  surf2grid time = 0.00532494 secs
+  map/comm1/comm2/comm3/comm4/split percent = 31.8687 7.19193 20.3785 2.49894 3.57279 16.147
+Memory usage per proc in Mbytes:
+  particles (ave,min,max) = 0 0 0
+  grid      (ave,min,max) = 3.88879 3.88879 3.88879
+  surf      (ave,min,max) = 0.0241699 0.0241699 0.0241699
+  total     (ave,min,max) = 3.91296 3.91296 3.91296
+Step CPU Np Ncoll Nscoll 
+       0            0        0        0        0 
