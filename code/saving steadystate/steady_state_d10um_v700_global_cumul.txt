@@ -1,0 +1,3 @@
+# Cumulative total droplet force over full steady-state sampling window
+# Timestep  Fx_total_N  Fy_total_N  Fz_total_N
+10000 1.25427e-08 1.34697e-10 -3.34839e-11

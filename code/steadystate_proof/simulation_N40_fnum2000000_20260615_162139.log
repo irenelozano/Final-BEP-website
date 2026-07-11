@@ -1,0 +1,140 @@
+SPARTA (24 Sep 2025)
+Running on 4 MPI task(s)
+Created orthogonal box = (0 0 0) to (0.0005 0.0005 0.0005)
+WARNING: Could not acquire nearby ghost cells b/c grid partition is not clumped (../grid.cpp:473)
+Created 64000 child grid cells
+  CPU time = 0.00255172 secs
+  create/ghost percent = 79.125 20.875
+Balance grid migrated 48000 cells
+  CPU time = 0.0114222 secs
+  reassign/sort/migrate/ghost percent = 25.161 1.5281 43.9898 29.3211
+Reading surface file ...
+  192 triangles
+  0.000245 0.000255 xlo xhi
+  0.000245 0.000255 ylo yhi
+  0.000245 0.000255 zlo zhi
+  1.37386e-06 min triangle edge length
+  8.32156e-13 min triangle area
+  8 0 = cells overlapping surfs, overlap cells with unmarked corner pts
+  63992 0 8 = cells outside/inside/overlapping surfs
+  8 = surf cells with 1,2,etc splits
+  1.24999513661453e-10 1.24999513661465e-10 = cell-wise and global flow volume
+  CPU time = 0.0110282 secs
+  read/check/sort/surf2grid/ghost/inout/particle percent = 41.4243 2.65214 4.85179 31.466 19.6058 7.04611 0.00712716
+  surf2grid time = 0.00347015 secs
+  map/comm1/comm2/comm3/comm4/split percent = 43.7072 1.80643 27.4557 3.41988 4.38338 8.88094
+Memory usage per proc in Mbytes:
+  particles (ave,min,max) = 0 0 0
+  grid      (ave,min,max) = 3.88879 3.88879 3.88879
+  surf      (ave,min,max) = 0.0241699 0.0241699 0.0241699
+  total     (ave,min,max) = 3.91296 3.91296 3.91296
+Step CPU Np Ncoll Nscoll 
+       0            0        0        0        0 
+    1000    22.974646  1074245    25060        7 
+    2000    47.744321  1073614    24946        5 
+    3000    70.392801  1074931    25151        3 
+    4000    95.198241  1072947    25064        8 
+    5000    120.40875  1073501    25146        2 
+    6000    143.85765  1074266    25085        6 
+    7000    167.68209  1074212    24962        6 
+    8000    192.12458  1074471    25152        4 
+    9000    217.50752  1073743    25203        4 
+   10000    246.50161  1074747    25250        7 
+   11000    269.37216  1073825    25236       10 
+   12000     292.9825  1074707    25257        9 
+   13000    316.41172  1074670    25036        2 
+   14000    340.11237  1074817    25329        2 
+   15000    364.36169  1073144    25049       10 
+   16000      388.025  1073390    25043        4 
+   17000    411.78422  1074320    25102        5 
+   18000    436.30996  1073584    25008        5 
+   19000    460.05256  1073616    25138        0 
+   20000    484.12223  1074234    25140        7 
+   21000    507.62216  1074477    25132        4 
+   22000    531.64414  1074025    25187        6 
+   23000    556.11113  1074773    25264        7 
+   24000    579.40808  1074106    25225        8 
+   25000    602.91828  1075026    25033        4 
+Loop time of 602.919 on 4 procs for 25000 steps with 1075026 particles
+Performance: 41.465 timesteps/s, 44.576 Mparticle-step/s
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Move    | 245.91     | 268.8      | 291.93     | 136.1 | 44.58
+Coll    | 102.78     | 122.27     | 144.26     | 175.4 | 20.28
+Sort    | 82.129     | 87.607     | 93.001     |  56.3 | 14.53
+Comm    | 28.666     | 29.469     | 29.773     |   8.6 |  4.89
+Modify  | 0.050683   | 12.073     | 24.115     | 346.0 |  2.00
+Output  | 0.0072776  | 0.028947   | 0.050107   |  12.4 |  0.00
+Other   |            | 82.67      |            |       | 13.71
+
+Particle moves    = 26776064448 (26.8B)
+Cells touched     = 57592433202 (57.6B)
+Particle comms    = 557425512 (557M)
+Boundary collides = 446515086 (447M)
+Boundary exits    = 336490229 (336M)
+SurfColl checks   = 368231048 (368M)
+SurfColl occurs   = 156794 (0.157M)
+Surf reactions    = 0 (0K)
+Collide attempts  = 1301244711 (1.3B)
+Collide occurs    = 625373826 (625M)
+Gas reactions     = 0 (0K)
+Particles stuck   = 0
+Axisymm bad moves = 0
+
+Particle-moves/CPUsec/proc: 1.11027e+07
+Particle-moves/step: 1.07104e+06
+Cell-touches/particle/step: 2.15089
+Particle comm iterations/step: 3.00208
+Particle fraction communicated: 0.0208181
+Particle fraction colliding with boundary: 0.0166759
+Particle fraction exiting boundary: 0.0125668
+Surface-checks/particle/step: 0.0137522
+Surface-collisions/particle/step: 5.85575e-06
+Surface-reactions/particle/step: 0
+Collision-attempts/particle/step: 0.0485973
+Collisions/particle/step: 0.0233557
+Gas-reactions/particle/step: 0
+
+Particles: 268756 ave 293707 max 243867 min
+Histogram: 2 0 0 0 0 0 0 0 0 2
+Cells:     16000 ave 16000 max 16000 min
+Histogram: 4 0 0 0 0 0 0 0 0 0
+GhostCell: 1640 ave 1640 max 1640 min
+Histogram: 4 0 0 0 0 0 0 0 0 0
+EmptyCell: 1640 ave 1640 max 1640 min
+Histogram: 4 0 0 0 0 0 0 0 0 0
+Surfs:     192 ave 192 max 192 min
+Histogram: 4 0 0 0 0 0 0 0 0 0
+GhostSurf: 0 ave 0 max 0 min
+Histogram: 4 0 0 0 0 0 0 0 0 0
+Memory usage per proc in Mbytes:
+  particles (ave,min,max) = 26.5625 23.4375 29.6875
+  grid      (ave,min,max) = 3.88879 3.88879 3.88879
+  surf      (ave,min,max) = 0.0241699 0.0241699 0.0241699
+  total     (ave,min,max) = 30.4777 27.3527 33.6027
+Step CPU Np Ncoll Nscoll 
+   25000            0  1075026    25033        0 
+   26000    24.019891  1074673    25115        7 
+   27000    47.739685  1073548    25247        4 
+   28000    71.902814  1073993    24941       12 
+   29000    95.626409  1073945    24940        5 
+   30000    121.01539  1074916    24871        6 
+   31000    144.81929  1073525    25215        4 
+   32000    168.66063  1074640    25075        4 
+   33000    192.32693  1074811    25131        6 
+   34000    214.90209  1073577    25234        6 
+   35000    237.56445  1075045    25275       11 
+   36000    260.13731  1073970    25173        8 
+   37000     282.9541  1073918    25123        3 
+   38000    305.69036  1074232    24988        8 
+   39000     328.2405  1073511    25040        8 
+   40000    350.93303  1074981    25063        7 
+   41000    374.09102  1074593    25306        6 
+   42000    397.02074  1074783    25003        3 
+   43000    419.67082  1074233    24987        4 
+   44000    442.32731  1074638    25061        7 
+   45000    464.95246  1073801    25300        4 
+   46000     488.2722  1073775    25188        3 
+   47000    511.33927  1075318    25203        2 
