@@ -1148,7 +1148,7 @@ These are the main conclusions from the 30-case matrix. All numbers from the rep
 
 From Chapter 7 of the report. Critical for anyone using these results:
 
-### 12.1 ✅ Accommodation Coefficient (α = 0.3)
+### 12.1 Accommodation Coefficient (α = 0.3)
 
 **Problem:** The CLL coefficients α_n = α_t = α_rot = 0.3 are assumed, not measured. No experimental H₂–Sn accommodation data exist for these conditions.
 
@@ -1156,25 +1156,25 @@ From Chapter 7 of the report. Critical for anyone using these results:
 
 **Recommendation:** An α-sensitivity study (α ∈ [0.1, 1.0]) would convert single-point estimates into defensible ranges.
 
-### 12.2 ✅ Isothermal, Rigid, Inert Droplet
+### 12.2 Isothermal, Rigid, Inert Droplet
 
 **Problem:** The droplet is modelled as a rigid sphere at 293 K. Real tin micro-particles originate molten (Tmelt ≈ 505 K), which changes the momentum of reflected molecules. Evaporation, deformation, and SnH₄ surface chemistry are neglected.
 
 **Impact:** Stopping distances could be different for hot (real) vs cold (simulated) particles. The hot-wall effect would increase drag (hotter surface → faster reflected molecules → more momentum transfer).
 
-### 12.3 ✅ Quasi-Steady Drag
+### 12.3 Quasi-Steady Drag
 
 **Problem:** Each DSMC run computes steady drag at fixed v. The trajectory model applies this steady law to a decelerating particle. Unsteady / added-mass effects during deceleration are excluded.
 
 **Justification:** Timescale separation: τ_gas ~ 10⁻⁷ s ≪ τ_droplet ~ 10⁻³–10⁻² s.
 
-### 12.4 ✅ 1D Single-Particle Trajectory
+### 12.4 1D Single-Particle Trajectory
 
 **Problem:** Only axial drag is modelled. No angular distribution, no particle-particle interactions, no bulk sweeping flow. Results are a "worst-case axial estimate".
 
 **Impact:** Real debris capture fraction in the chamber will be higher (more effective) due to the sweeping flow.
 
-### 12.5 ✅ Under-Resolved Large Droplets
+### 12.5 Under-Resolved Large Droplets
 
 **Problem:** The 10 μm production case uses N=10 (Δx = 50 μm), which:
 - Exceeds the Bird criterion: Δx < λ/3 ≈ 41 μm
@@ -1182,7 +1182,7 @@ From Chapter 7 of the report. Critical for anyone using these results:
 
 **Mitigation:** Grid coarsening was shown to **raise** the computed drag (wrong direction to explain the ~49% deficit), so the deficit is physical, not numerical. But the 5–10 μm results are "bounds, not fully grid-converged production points".
 
-### 12.6 ✅ No Experimental Validation
+### 12.6 No Experimental Validation
 
 **Problem:** All validation is against analytical references (Epstein, Baines). No experimental deceleration measurements exist.
 
