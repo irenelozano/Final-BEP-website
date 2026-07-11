@@ -1,8 +1,8 @@
-# SPARTA DSMC Drag Simulation — Complete Step-by-Step Handover Guide
+# SPARTA DSMC Drag Simulation: Complete Step-by-Step Handover Guide
 
 **Project:** TU/e — ASML Bachelor End Project (BEP)
-**Author:** Irene Lozano
-**Date:** June–July 2026
+**Author:** Irene Lozano Gonzalez
+**Date:** May–July 2026
 
 ---
 
