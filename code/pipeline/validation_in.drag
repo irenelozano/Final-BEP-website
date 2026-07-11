@@ -1,0 +1,107 @@
+##################################################################
+# CONTROL TEMPLATE: Fully accommodated CLL validation case
+# Purpose: single alpha = 1 DSMC case for comparison with
+# fully diffuse/free-molecular analytical references
+##################################################################
+
+# -----------------------------------------------------------------
+# 1. SIMULATION INITIALIZATION & ENVIRONMENT
+# -----------------------------------------------------------------
+
+seed                12345
+dimension           3
+global              gridcut 0.0 comm/sort yes
+
+# -----------------------------------------------------------------
+# 2. DOMAIN GEOMETRY & GRID MESHING
+# -----------------------------------------------------------------
+
+variable            Lx equal ${diam_scale}*50
+variable            Ly equal ${diam_scale}*50
+variable            Lz equal ${diam_scale}*50
+
+boundary            oo rr rr
+create_box          0 ${Lx} 0 ${Ly} 0 ${Lz}
+
+create_grid         ${grid_res} ${grid_res} ${grid_res}
+balance_grid        rcb cell
+
+# -----------------------------------------------------------------
+# 3. GAS PROPERTIES & MOLECULAR PHYSICS
+# -----------------------------------------------------------------
+
+global              nrho 2.47e22 fnum ${fnum_val}
+
+species             ../global_assets/hydrogen.species H2
+collide             vss all ../global_assets/hydrogen.vhs
+
+# -----------------------------------------------------------------
+# 4. FLOW INJECTION & SURFACE COUPLING
+# -----------------------------------------------------------------
+
+mixture             inlet H2 temp 293.0 vstream ${vel_val} 0.0 0.0
+fix                 in emit/face inlet xlo
+
+variable            mesh_file index ../global_assets/data.sphere
+
+read_surf           ${mesh_file} scale ${diam_scale} ${diam_scale} ${diam_scale} ftrans 0.5 0.5 0.5
+
+# Fully accommodated CLL control case:
+# alpha_n = 1.0, alpha_t = 1.0, alpha_rot = 1.0
+# alpha_vib = 0.0 because H2 vibrational modes are inactive at 293 K.
+surf_collide        1 cll 293.0 1.0 1.0 1.0 0.0
+surf_modify         all collide 1
+
+# -----------------------------------------------------------------
+# 5. TIMESTEP AND SCREEN OUTPUT
+# -----------------------------------------------------------------
+
+timestep            ${t_step}
+
+stats               1000
+stats_style         step cpu np ncoll nscoll
+
+# -----------------------------------------------------------------
+# 6. SURFACE FORCE COMPUTES
+# -----------------------------------------------------------------
+
+# Per-surface force on every sphere triangle.
+compute             ID_drag_compute surf all all fx fy fz
+
+# Global force obtained by summing all surface facets.
+# This gives an easier output file for direct comparison.
+compute             ID_drag_total reduce sum c_ID_drag_compute[1] c_ID_drag_compute[2] c_ID_drag_compute[3]
+
+# -----------------------------------------------------------------
+# 7. PHASE 1: TRANSIENT RUN
+# -----------------------------------------------------------------
+
+run                 ${TRANSIENT_STEPS}
+
+# -----------------------------------------------------------------
+# 8. PHASE 2: STEADY-STATE SAMPLING
+# -----------------------------------------------------------------
+
+# Cumulative surface average over the whole steady-state window.
+fix                 f_drag_cumul ave/surf all 1 ${STEADY_STEPS} ${STEADY_STEPS} c_ID_drag_compute[*]
+
+# Block-wise surface average every 1000 steps.
+fix                 f_drag_blocks ave/surf all 1 1000 1000 c_ID_drag_compute[*]
+
+# Global cumulative average over the whole steady-state window.
+fix                 f_drag_global_cumul ave/time 1 ${STEADY_STEPS} ${STEADY_STEPS} c_ID_drag_total[1] c_ID_drag_total[2] c_ID_drag_total[3] &
+                    file ${out_name}_global_cumul.txt &
+                    title1 "# Alpha = 1 global cumulative force" &
+                    title2 "# Timestep  Fx_total_N  Fy_total_N  Fz_total_N"
+
+# Global block-wise force history, useful for checking noise/stability.
+fix                 f_drag_global_blocks ave/time 1 1000 1000 c_ID_drag_total[1] c_ID_drag_total[2] c_ID_drag_total[3] &
+                    file ${out_name}_global_blocks.txt &
+                    title1 "# Alpha = 1 global block-wise force history" &
+                    title2 "# Timestep  Fx_total_N  Fy_total_N  Fz_total_N"
+
+# Surface dumps
+dump                1 surf all ${STEADY_STEPS} ${out_name}_surface_cumul.txt id f_f_drag_cumul[*]
+dump                2 surf all 1000 ${out_name}_surface_blocks.txt id f_f_drag_blocks[*]
+
+run                 ${STEADY_STEPS}

@@ -1,0 +1,114 @@
+##################################################################
+# STEADY-STATE TEST TEMPLATE
+# One-case DSMC drag simulation with block-wise force history
+##################################################################
+
+# -----------------------------------------------------------------
+# 1. SIMULATION INITIALIZATION & ENVIRONMENT
+# -----------------------------------------------------------------
+
+seed                12345
+dimension           3
+global              gridcut 0.0 comm/sort yes
+
+# -----------------------------------------------------------------
+# 2. DOMAIN GEOMETRY & GRID MESHING
+# -----------------------------------------------------------------
+
+variable            Lx equal ${diam_scale}*50
+variable            Ly equal ${diam_scale}*50
+variable            Lz equal ${diam_scale}*50
+
+boundary            oo rr rr
+create_box          0 ${Lx} 0 ${Ly} 0 ${Lz}
+
+create_grid         ${grid_res} ${grid_res} ${grid_res}
+balance_grid        rcb cell
+
+# -----------------------------------------------------------------
+# 3. GAS PROPERTIES & MOLECULAR PHYSICS
+# -----------------------------------------------------------------
+
+global              nrho 2.47e22 fnum ${fnum_val}
+
+species             ../global_assets/hydrogen.species H2
+collide             vss all ../global_assets/hydrogen.vhs
+
+# -----------------------------------------------------------------
+# 4. FLOW INJECTION & SURFACE COUPLING
+# -----------------------------------------------------------------
+
+mixture             inlet H2 temp 293.0 vstream ${vel_val} 0.0 0.0
+fix                 in emit/face inlet xlo
+
+read_surf           ../global_assets/data.sphere scale ${diam_scale} ${diam_scale} ${diam_scale} ftrans 0.5 0.5 0.5
+
+surf_collide        1 cll 293.0 0.3 0.3 0.3 0.0
+surf_modify         all collide 1
+
+# -----------------------------------------------------------------
+# 5. TIMESTEP AND SCREEN OUTPUT
+# -----------------------------------------------------------------
+
+timestep            ${t_step}
+
+stats               1000
+stats_style         step cpu np ncoll nscoll
+
+# -----------------------------------------------------------------
+# 6. SURFACE FORCE COMPUTES
+# -----------------------------------------------------------------
+
+# Per-surface force on every sphere triangle.
+# c_ID_drag_compute[1] = Fx per surface element
+# c_ID_drag_compute[2] = Fy per surface element
+# c_ID_drag_compute[3] = Fz per surface element
+compute             ID_drag_compute surf all all fx fy fz
+
+# Global total force on the full droplet, obtained by summing all facets.
+# This is the key output for steady-state verification.
+# c_ID_drag_total[1] = total Fx
+# c_ID_drag_total[2] = total Fy
+# c_ID_drag_total[3] = total Fz
+compute             ID_drag_total reduce sum c_ID_drag_compute[1] c_ID_drag_compute[2] c_ID_drag_compute[3]
+
+# -----------------------------------------------------------------
+# 7. PHASE 1: TRANSIENT RUN
+# -----------------------------------------------------------------
+# This part is discarded. It allows the particle field and surface force
+# statistics to develop before steady-state sampling begins.
+
+run                 ${TRANSIENT_STEPS}
+
+# -----------------------------------------------------------------
+# 8. PHASE 2: STEADY-STATE SAMPLING
+# -----------------------------------------------------------------
+
+# A. Cumulative average over the full steady-state window.
+# This is equivalent to the production drag extraction.
+fix                 f_drag_cumul ave/surf all 1 ${STEADY_STEPS} ${STEADY_STEPS} c_ID_drag_compute[*]
+
+# B. Per-surface block averages every 1000 steps.
+# This keeps the triangle-by-triangle force information.
+fix                 f_drag_blocks ave/surf all 1 1000 1000 c_ID_drag_compute[*]
+
+# C. Global total-force block averages every 1000 steps.
+# This is the clean file to use for the steady-state proof in MATLAB.
+fix                 f_drag_global_blocks ave/time 1 100 100 c_ID_drag_total[1] c_ID_drag_total[2] c_ID_drag_total[3] &
+                    file ${out_name}_global_blocks.txt &
+                    title1 "# Block-wise total droplet force during steady-state sampling window" &
+                    title2 "# Timestep  Fx_total_N  Fy_total_N  Fz_total_N"
+
+# D. Global cumulative average over the full steady-state window.
+# This gives one final total-force value at the end.
+fix                 f_drag_global_cumul ave/time 1 ${STEADY_STEPS} ${STEADY_STEPS} c_ID_drag_total[1] c_ID_drag_total[2] c_ID_drag_total[3] &
+                    file ${out_name}_global_cumul.txt &
+                    title1 "# Cumulative total droplet force over full steady-state sampling window" &
+                    title2 "# Timestep  Fx_total_N  Fy_total_N  Fz_total_N"
+
+# Surface dumps
+dump                1 surf all ${STEADY_STEPS} ${out_name}_surface_cumul.txt id f_f_drag_cumul[*]
+dump                2 surf all 1000 ${out_name}_surface_blocks.txt id f_f_drag_blocks[*]
+
+# Run the steady-state sampling window
+run                 ${STEADY_STEPS}

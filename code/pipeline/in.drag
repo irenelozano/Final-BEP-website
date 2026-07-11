@@ -1,0 +1,79 @@
+##################################################################
+# MASTER TEMPLATE: Dynamic Parametric Drag Simulation
+# Path: sparta/simulations/tin_drag/pipeline/in.drag
+##################################################################
+
+# -----------------------------------------------------------------
+# 1. VARIABLE INJECTION HOOKS (all passed via -var on command line)
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+# 2. SIMULATION INITIALIZATION & ENVIRONMENT
+# -----------------------------------------------------------------
+seed                12345
+dimension           3
+global              gridcut 0.0 comm/sort yes
+
+# -----------------------------------------------------------------
+# 3. DOMAIN GEOMETORY & GRID MESHING
+# -----------------------------------------------------------------
+variable            Lx equal ${diam_scale}*50
+variable            Ly equal ${diam_scale}*50
+variable            Lz equal ${diam_scale}*50
+
+boundary            oo rr rr
+create_box          0 ${Lx} 0 ${Ly} 0 ${Lz}
+
+create_grid         ${grid_res} ${grid_res} ${grid_res}
+balance_grid        rcb cell
+
+# -----------------------------------------------------------------
+# 4. GAS PROPERTIES & MOLECULAR PHYSICS
+# -----------------------------------------------------------------
+global              nrho 2.47e22 fnum ${fnum_val}
+
+species             ../global_assets/hydrogen.species H2
+collide             vss all ../global_assets/hydrogen.vhs
+# -----------------------------------------------------------------
+# 5. FLOW INJECTION & SURFACE COUPLING
+# -----------------------------------------------------------------
+mixture             inlet H2 temp 293.0 vstream ${vel_val} 0.0 0.0
+fix                 in emit/face inlet xlo
+
+variable            mesh_file index ../global_assets/data.sphere
+
+read_surf           ${mesh_file} scale ${diam_scale} ${diam_scale} ${diam_scale} ftrans 0.5 0.5 0.5
+
+surf_collide        1 cll 293.0 0.3 0.3 0.3 0.0
+surf_modify         all collide 1
+
+# -----------------------------------------------------------------
+# 6. TWO-PHASE STEADY-STATE AVERAGING WINDOW
+# -----------------------------------------------------------------
+# Phase 1 (TRANSIENT_STEPS): run to steady state, no measurement.
+# Phase 2 (STEADY_STEPS):  sample every step (Nevery=1),
+#                          average over entire window, dump once at end.
+# Total physical time  = (TRANSIENT_STEPS + STEADY_STEPS) * t_step
+# Memory per MPI rank  = 0 (ave/surf accumulates in-place)
+# -----------------------------------------------------------------
+variable            t_step index 1e-9
+variable            TRANSIENT_STEPS index 25000
+variable            STEADY_STEPS index 25000
+
+timestep            ${t_step}
+stats               1000
+stats_style         step cpu np ncoll nscoll
+
+compute             ID_drag_compute surf all all fx fy fz
+
+run                 ${TRANSIENT_STEPS}
+
+# Cumulative average over the entire steady window (used for production drag extraction)
+fix                 f_drag_cumul ave/surf all 1 ${STEADY_STEPS} ${STEADY_STEPS} c_ID_drag_compute[*]
+
+# Block-wise average every 1000 steps (used for steady-state convergence analysis)
+fix                 f_drag_blocks ave/surf all 1 1000 1000 c_ID_drag_compute[*]
+
+dump                1 surf all ${STEADY_STEPS} ${out_name} id f_f_drag_cumul[*]
+dump                2 surf all 1000 ${out_name}_blocks id f_f_drag_blocks[*]
+
+run                 ${STEADY_STEPS}

@@ -1,0 +1,96 @@
+##################################################################
+# STEADY-STATE PROOF INPUT — Records from Step 0
+# Captures BOTH the transient phase and the steady-state phase
+# so the convergence of the running mean is visible in the plot.
+#
+# Key difference from in.steadystate_test:
+#   - The global total force fix is registered BEFORE any run.
+#   - Recording interval is every RECORD_EVERY steps continuously.
+#   - No phase split in the SPARTA input — both phases use one run.
+#     The transient/steady boundary is marked in post-processing.
+##################################################################
+
+# -----------------------------------------------------------------
+# 1. SIMULATION INITIALIZATION & ENVIRONMENT
+# -----------------------------------------------------------------
+seed                12345
+dimension           3
+global              gridcut 0.0 comm/sort yes
+
+# -----------------------------------------------------------------
+# 2. DOMAIN GEOMETRY & GRID MESHING
+# -----------------------------------------------------------------
+variable            Lx equal ${diam_scale}*50
+variable            Ly equal ${diam_scale}*50
+variable            Lz equal ${diam_scale}*50
+
+boundary            oo rr rr
+create_box          0 ${Lx} 0 ${Ly} 0 ${Lz}
+
+create_grid         ${grid_res} ${grid_res} ${grid_res}
+balance_grid        rcb cell
+
+# -----------------------------------------------------------------
+# 3. GAS PROPERTIES & MOLECULAR PHYSICS
+# -----------------------------------------------------------------
+global              nrho 2.47e22 fnum ${fnum_val}
+
+species             ../global_assets/hydrogen.species H2
+collide             vss all ../global_assets/hydrogen.vhs
+
+# -----------------------------------------------------------------
+# 4. FLOW INJECTION & SURFACE COUPLING
+# -----------------------------------------------------------------
+mixture             inlet H2 temp 293.0 vstream ${vel_val} 0.0 0.0
+fix                 in emit/face inlet xlo
+
+read_surf           ../global_assets/data.sphere scale ${diam_scale} ${diam_scale} ${diam_scale} ftrans 0.5 0.5 0.5
+
+surf_collide        1 cll 293.0 0.3 0.3 0.3 0.0
+surf_modify         all collide 1
+
+# -----------------------------------------------------------------
+# 5. TIMESTEP AND SCREEN OUTPUT
+# -----------------------------------------------------------------
+timestep            ${t_step}
+
+stats               ${RECORD_EVERY}
+stats_style         step cpu np ncoll nscoll
+
+# -----------------------------------------------------------------
+# 6. FORCE COMPUTES — REGISTERED BEFORE ANY RUN
+#    These are active from step 0, recording through both the
+#    transient AND the steady-state window.
+# -----------------------------------------------------------------
+
+# Per-triangle Fx, Fy, Fz on every surface element of the sphere
+compute             ID_drag_compute surf all all fx fy fz
+
+# Time-average per-surface forces over every RECORD_EVERY steps.
+# Nevery=1  : sample the compute every single timestep
+# Nrepeat=RECORD_EVERY : accumulate RECORD_EVERY samples before averaging
+# Nfreq=RECORD_EVERY   : write the average every RECORD_EVERY steps, then reset
+#
+# This guarantees each output row is the mean force over RECORD_EVERY
+# timesteps — enough surface collisions to be non-zero even in the
+# transient, and statistically stable in the steady window.
+# Registered BEFORE any run so it records from step 0 through the
+# full transient AND steady-state window.
+fix                 f_drag_blocks ave/surf all 1 ${RECORD_EVERY} ${RECORD_EVERY} c_ID_drag_compute[*]
+dump                1 surf all ${RECORD_EVERY} ${out_name}_timeseries.txt id f_f_drag_blocks[*]
+
+# -----------------------------------------------------------------
+# 7. SINGLE CONTINUOUS RUN — transient + steady in one call
+#    TOTAL_STEPS = TRANSIENT_STEPS + STEADY_STEPS
+#    The transient/steady boundary is identified in post-processing.
+# -----------------------------------------------------------------
+run                 ${TOTAL_STEPS}
+
+# -----------------------------------------------------------------
+# 8. CUMULATIVE SURFACE DUMP — final averaged drag value
+#    Matches exactly what in.drag produces so values are comparable.
+# -----------------------------------------------------------------
+fix                 f_drag_cumul ave/surf all 1 ${STEADY_STEPS} ${STEADY_STEPS} c_ID_drag_compute[*]
+dump                2 surf all ${STEADY_STEPS} ${out_name}_surface_cumul.txt id f_f_drag_cumul[*]
+
+run                 ${STEADY_STEPS}

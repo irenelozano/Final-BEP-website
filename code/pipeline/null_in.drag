@@ -1,0 +1,50 @@
+##################################################################
+# NULL SIMULATION: background force F0(v) via momentum-flux probe
+# No sphere — measures spurious wind at the center location
+##################################################################
+
+seed                12345
+dimension           3
+global              gridcut 0.0 comm/sort yes
+
+variable            Lx equal ${diam_scale}*50
+variable            Ly equal ${diam_scale}*50
+variable            Lz equal ${diam_scale}*50
+
+boundary            oo rr rr
+create_box          0 ${Lx} 0 ${Ly} 0 ${Lz}
+
+create_grid         ${grid_res} ${grid_res} ${grid_res}
+balance_grid        rcb cell
+
+global              nrho 2.47e22 fnum ${fnum_val}
+
+species             ../global_assets/hydrogen.species H2
+collide             vss all ../global_assets/hydrogen.vhs
+
+mixture             inlet H2 temp 293.0 vstream ${vel_val} 0.0 0.0
+fix                 in emit/face inlet xlo
+
+# ---- Probe region at sphere center (10% of domain) ----
+region              probe block 0.45 0.55 0.45 0.55 0.45 0.55 units box
+
+# ---- Thermal averages over the probe region ----
+compute             probe_thermo thermal/grid all region probe
+fix                 f_probe ave/time all 1 ${STEADY_STEPS} ${STEADY_STEPS} c_probe_thermo[*]
+
+variable            t_step index 1e-9
+variable            TRANSIENT_STEPS index 25000
+variable            STEADY_STEPS index 25000
+
+timestep            ${t_step}
+stats               1000
+stats_style         step cpu np ncoll nscoll
+
+run                 ${TRANSIENT_STEPS}
+
+# Dump the grid data at steady state
+dump                1 grid all ${STEADY_STEPS} ${out_name} c_probe_thermo[*] id
+
+run                 ${STEADY_STEPS}
+
+print "NULL v=${vel_val} d_scale=${diam_scale}"

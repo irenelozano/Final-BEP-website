@@ -1,0 +1,171 @@
+SPARTA (24 Sep 2025)
+Running on 4 MPI task(s)
+##################################################################
+# MASTER TEMPLATE: Dynamic Parametric Drag Simulation
+# Path: sparta/simulations/tin_drag/pipeline/in.drag
+##################################################################
+
+# -----------------------------------------------------------------
+# 1. VARIABLE INJECTION HOOKS (all passed via -var on command line)
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+# 2. SIMULATION INITIALIZATION & ENVIRONMENT
+# -----------------------------------------------------------------
+seed                12345
+dimension           3
+global              gridcut 0.0 comm/sort yes
+
+# -----------------------------------------------------------------
+# 3. DOMAIN GEOMETORY & GRID MESHING
+# -----------------------------------------------------------------
+variable            Lx equal ${diam_scale}*50
+variable            Lx equal 10e-6*50
+variable            Ly equal ${diam_scale}*50
+variable            Ly equal 10e-6*50
+variable            Lz equal ${diam_scale}*50
+variable            Lz equal 10e-6*50
+
+boundary            oo rr rr
+create_box          0 ${Lx} 0 ${Ly} 0 ${Lz}
+create_box          0 0.0005 0 ${Ly} 0 ${Lz}
+create_box          0 0.0005 0 0.0005 0 ${Lz}
+create_box          0 0.0005 0 0.0005 0 0.0005
+Created orthogonal box = (0 0 0) to (0.0005 0.0005 0.0005)
+
+create_grid         ${grid_res} ${grid_res} ${grid_res}
+create_grid         28 ${grid_res} ${grid_res}
+create_grid         28 28 ${grid_res}
+create_grid         28 28 28
+WARNING: Could not acquire nearby ghost cells b/c grid partition is not clumped (../grid.cpp:473)
+Created 21952 child grid cells
+  CPU time = 0.00263315 secs
+  create/ghost percent = 94.2265 5.77354
+balance_grid        rcb cell
+Balance grid migrated 15680 cells
+  CPU time = 0.00590004 secs
+  reassign/sort/migrate/ghost percent = 25.7447 0.535759 40.839 32.8806
+
+# -----------------------------------------------------------------
+# 4. GAS PROPERTIES & MOLECULAR PHYSICS
+# -----------------------------------------------------------------
+global              nrho 2.47e22 fnum ${fnum_val}
+global              nrho 2.47e22 fnum 2815237
+
+species             ../global_assets/hydrogen.species H2
+collide             vss all ../global_assets/hydrogen.vhs
+# -----------------------------------------------------------------
+# 5. FLOW INJECTION & SURFACE COUPLING
+# -----------------------------------------------------------------
+mixture             inlet H2 temp 293.0 vstream ${vel_val} 0.0 0.0
+mixture             inlet H2 temp 293.0 vstream 700 0.0 0.0
+fix                 in emit/face inlet xlo
+
+variable            mesh_file index ../global_assets/data.sphere
+
+read_surf           ${mesh_file} scale ${diam_scale} ${diam_scale} ${diam_scale} ftrans 0.5 0.5 0.5
+read_surf           ../global_assets/data.sphere scale ${diam_scale} ${diam_scale} ${diam_scale} ftrans 0.5 0.5 0.5
+read_surf           ../global_assets/data.sphere scale 10e-6 ${diam_scale} ${diam_scale} ftrans 0.5 0.5 0.5
+read_surf           ../global_assets/data.sphere scale 10e-6 10e-6 ${diam_scale} ftrans 0.5 0.5 0.5
+read_surf           ../global_assets/data.sphere scale 10e-6 10e-6 10e-6 ftrans 0.5 0.5 0.5
+  192 triangles
+  0.000245 0.000255 xlo xhi
+  0.000245 0.000255 ylo yhi
+  0.000245 0.000255 zlo zhi
+  1.37386e-06 min triangle edge length
+  8.32156e-13 min triangle area
+  8 0 = cells overlapping surfs, overlap cells with unmarked corner pts
+  21944 0 8 = cells outside/inside/overlapping surfs
+  8 = surf cells with 1,2,etc splits
+  1.25e-10 1.25e-10 = cell-wise and global flow volume
+  CPU time = 0.0104076 secs
+  read/check/sort/surf2grid/ghost/inout/particle percent = 45.0822 3.16518 1.72211 23.5155 26.515 8.01774 0.0113091
+  surf2grid time = 0.0024474 secs
+  map/comm1/comm2/comm3/comm4/split percent = 36.1226 2.35107 24.6192 3.43977 4.26951 17.0009
+
+surf_collide        1 cll 293.0 0.3 0.3 0.3 0.0
+surf_modify         all collide 1
+
+# -----------------------------------------------------------------
+# 6. TWO-PHASE STEADY-STATE AVERAGING WINDOW
+# -----------------------------------------------------------------
+# Phase 1 (TRANSIENT_STEPS): run to steady state, no measurement.
+# Phase 2 (STEADY_STEPS):  sample every step (Nevery=1),
+#                          average over entire window, dump once at end.
+# Total physical time  = (TRANSIENT_STEPS + STEADY_STEPS) * t_step
+# Memory per MPI rank  = 0 (ave/surf accumulates in-place)
+# -----------------------------------------------------------------
+variable            t_step index 1e-9
+variable            TRANSIENT_STEPS index 25000
+variable            STEADY_STEPS index 25000
+
+timestep            ${t_step}
+timestep            4.31869608e-09
+stats               1000
+stats_style         step cpu np ncoll nscoll
+
+compute             ID_drag_compute surf all all fx fy fz
+
+run                 ${TRANSIENT_STEPS}
+run                 1000
+Memory usage per proc in Mbytes:
+  particles (ave,min,max) = 0 0 0
+  grid      (ave,min,max) = 1.51379 1.51379 1.51379
+  surf      (ave,min,max) = 0.0241699 0.0241699 0.0241699
+  total     (ave,min,max) = 1.53796 1.53796 1.53796
+Step CPU Np Ncoll Nscoll 
+       0            0        0        0        0 
+    1000     17.05109   763018    15435        2 
+Loop time of 17.0517 on 4 procs for 1000 steps with 763018 particles
+Performance: 58.645 timesteps/s, 44.747 Mparticle-step/s
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Move    | 6.5119     | 7.2055     | 7.8984     |  25.5 | 42.26
+Coll    | 3.1203     | 3.8666     | 4.6293     |  37.3 | 22.68
+Sort    | 1.8749     | 2.0459     | 2.2152     |  11.7 | 12.00
+Comm    | 0.70551    | 0.72758    | 0.73872    |   1.5 |  4.27
+Modify  | 0.0018863  | 0.49899    | 1          |  70.4 |  2.93
+Output  | 2.2641e-05 | 0.0010534  | 0.0020937  |   2.4 |  0.01
+Other   |            | 2.706      |            |       | 15.87
+
+Particle moves    = 699054847 (699M)
+Cells touched     = 1189063990 (1.19B)
+Particle comms    = 12797699 (12.8M)
+Boundary collides = 10066960 (10.1M)
+Boundary exits    = 7522370 (7.52M)
+SurfColl checks   = 22421524 (22.4M)
+SurfColl occurs   = 3607 (3.61K)
+Surf reactions    = 0 (0K)
+Collide attempts  = 24984503 (25M)
+Collide occurs    = 13477036 (13.5M)
+Reactions         = 0 (0K)
+Particles stuck   = 0
+Axisymm bad moves = 0
+
+Particle-moves/CPUsec/proc: 1.0249e+07
+Particle-moves/step: 699055
+Cell-touches/particle/step: 1.70096
+Particle comm iterations/step: 2.988
+Particle fraction communicated: 0.0183071
+Particle fraction colliding with boundary: 0.0144008
+Particle fraction exiting boundary: 0.0107608
+Surface-checks/particle/step: 0.0320741
+Surface-collisions/particle/step: 5.15982e-06
+Surf-reactions/particle/step: 0
+Collision-attempts/particle/step: 0.0357404
+Collisions/particle/step: 0.0192789
+Reactions/particle/step: 0
+
+Particles: 190754 ave 208159 max 173369 min
+Histogram: 2 0 0 0 0 0 0 0 0 2
+Cells:      5488 ave 5488 max 5488 min
+Histogram: 4 0 0 0 0 0 0 0 0 0
+GhostCell: 812 ave 812 max 812 min
+Histogram: 4 0 0 0 0 0 0 0 0 0
+EmptyCell: 812 ave 812 max 812 min
+Histogram: 4 0 0 0 0 0 0 0 0 0
+Surfs:    192 ave 192 max 192 min
+Histogram: 4 0 0 0 0 0 0 0 0 0
+GhostSurf: 0 ave 0 max 0 min
+Histogram: 4 0 0 0 0 0 0 0 0 0
