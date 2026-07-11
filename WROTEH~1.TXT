@@ -1,0 +1,1281 @@
+# SPARTA DSMC Drag Simulation — Complete Step-by-Step Handover Guide
+
+**Project:** TU/e — ASML Bachelor End Project (BEP)
+**Author:** Irene Lozano
+**Date:** June–July 2026
+
+---
+
+## Table of Contents
+
+1. [What This Project Does](#1-what-this-project-does)
+2. [Repository Structure (Every File Explained)](#2-repository-structure-every-file-explained)
+3. [Prerequisites & Installation](#3-prerequisites--installation)
+4. [Global Assets: The Physical Model](#4-global-assets-the-physical-model)
+5. [The Master SPARTA Input Template (`in.drag`)](#5-the-master-sparta-input-template-indrag)
+6. [Step-by-Step: Running Simulations](#6-step-by-step-running-simulations)
+7. [Step-by-Step: Post-Processing in MATLAB](#7-step-by-step-post-processing-in-matlab)
+8. [Step-by-Step: 2D Flow Visualization](#8-step-by-step-2d-flow-visualization)
+9. [Step-by-Step: Compiling the Report](#9-step-by-step-compiling-the-report)
+10. [Understanding the Output Files](#10-understanding-the-output-files)
+11. [Key Physics Results Summary](#11-key-physics-results-summary)
+12. [Known Limitations](#12-known-limitations)
+13. [`in.drag` vs `in.steadystate_proof` vs `validation_in.drag`](#13-indrag-vs-insteadystate_proof-vs-validation_indrag)
+14. [Quick Reference Tables](#14-quick-reference-tables)
+
+---
+
+## 1. What This Project Does
+
+This project uses the **DSMC (Direct Simulation Monte Carlo)** method via the **SPARTA** open-source code to compute the **aerodynamic drag force** on spherical tin micro-particles traveling through a low-pressure hydrogen buffer gas. This is directly relevant to **EUV lithography** at ASML, where tin debris ejected during plasma generation must be decelerated before it can damage sensitive collector optics.
+
+**The physics in one sentence:** A tin sphere (100 nm–10 μm) sits in a 100 Pa, 293 K hydrogen stream flowing at 20–700 m/s. Every case is **free-molecular** (Knudsen number Kn ≈ 12–1230), meaning gas molecules travel many droplet diameters between collisions, so continuum fluid dynamics (Navier-Stokes) is invalid and a kinetic (molecule-by-molecule) treatment is required.
+
+**The pipeline in one sentence:** A bash script computes optimal numerical parameters (grid size, timestep, particle count) for each (diameter, velocity) pair, calls SPARTA to run the DSMC simulation, parses the force output, and logs results to a CSV. MATLAB scripts then validate against analytical theory (Epstein, Baines, Stokes, Cunningham) and generate trajectory/penetration analyses.
+
+---
+
+## 2. Repository Structure (Every File Explained)
+
+```
+sparta/                                        # Root directory
+│
+├── BEP_Irene_0107.pdf                         # Full BEP report (100+ pages, PDF)
+├── README.md                                  # Short overview
+└── HANDOVER_GUIDE.md                          # ← This file
+│
+└── simulations/
+    └── tin_drag/                              # Main simulation directory
+        │
+        ├── global_assets/                     # *** PHYSICAL MODEL DEFINITIONS ***
+        │   ├── data.sphere                    # Sphere surface mesh: 98 points, 192 triangles.
+        │   │                                  #   A unit sphere (.xyz coordinates). At runtime,
+        │   │                                  #   SPARTA scales it by diam_scale and translates
+        │   │                                  #   to the box centre (ftrans 0.5 0.5 0.5).
+        │   │                                  #   192 triangles → 0.55% projected-area error.
+        │   │                                  #   Two larger variants exist: data_1200.sphere
+        │   │                                  #   (1200 tri) and data_2400.sphere3d (2400 tri).
+        │   │
+        │   ├── hydrogen.species               # H2 gas molecular properties (single line):
+        │   │                                  #   name = H2
+        │   │                                  #   molecular weight = 2.016 amu
+        │   │                                  #   mass = 3.346e-27 kg
+        │   │                                  #   rotational DOF = 2
+        │   │                                  #   rotational relaxation = 0.2 (constant)
+        │   │                                  #   vibrational DOF = 0 (inactive at 293 K)
+        │   │                                  #   vibrational relaxation = (none)
+        │   │                                  #   heat of formation = (none)
+        │   │                                  #   The exact format is SPARTA's species file:
+        │   │                                  #   "H2 2.016 3.346e-27 2 0.2 2 1.9e-5 6331.0 1.0 0"
+        │   │
+        │   └── hydrogen.vhs                   # H2 VHS (Variable Hard Sphere) collision params:
+        │                                      #   reference diameter d_ref = 2.72e-10 m
+        │                                      #   viscosity exponent ω = 0.67
+        │                                      #   reference temp T_ref = 273.15 K
+        │                                      #   viscosity at T_ref = (not used, SPARTA computes)
+        │                                      #   The exact format:
+        │                                      #   "H2 2.72e-10 0.67 273.15 1.0"
+        │
+        ├── pipeline/                          # *** SIMULATION SCRIPTS ***
+        │   │
+        │   ├── in.drag                        # MASTER SPARTA INPUT TEMPLATE (see §5)
+        │   │                                  #   Uses -var parameters for all case-specific values.
+        │   │                                  #   2-phase: transient (25000 steps) + steady (25000 steps).
+        │   │                                  #   Output: cumulative surface force dump + block averages.
+        │   │
+        │   ├── in.steadystate_proof           # STEADY-STATE PROOF INPUT (see §13)
+        │   │                                  #   Records force time series from STEP 0 (transient visible).
+        │   │                                  #   Single continuous run with fix BEFORE any run command.
+        │   │                                  #   Output: _timeseries.txt + _surface_cumul.txt
+        │   │
+        │   ├── validation_in.drag             # ALPHA=1 CONTROL INPUT (see §13)
+        │   │                                  #   Identical to in.drag but with α=1.0 instead of 0.3.
+        │   │                                  #   Also uses global force computes (reduce sum).
+        │   │                                  #   Additional outputs: _global_cumul.txt, _global_blocks.txt
+        │   │
+        │   ├── null_in.drag                   # (Unused — do not use)
+        │   │
+        │   ├── run_30case_matrix.sh           # *** PRODUCTION SCRIPT — 30-CASE SWEEP ***
+        │   │                                  #   Diameters: 100nm, 500nm, 1μm, 5μm, 10μm
+        │   │                                  #   Velocities: 20, 100, 250, 400, 550, 700 m/s
+        │   │                                  #   Contains the DYNAMIC OPTIMISER function:
+        │   │                                  #     compute_optimal_params(d, v) → grid, fnum, dt, steps
+        │   │                                  #   Key logic:
+        │   │                                  #     - Computes λ (mean free path) from VHS model
+        │   │                                  #     - Computes Kn = λ/d
+        │   │                                  #     - Picks grid resolution N based on regime:
+        │   │                                  #       Kn<0.1  → N_grad = 20 (continuum, gradient-resolved)
+        │   │                                  #       0.1<Kn<10 → N_grad = 10 (transitional)
+        │   │                                  #       Kn>10 → cube-root scaling from 40³ (100nm) to 10³ (10μm)
+        │   │                                  #     - Computes CFL timestep: dt = 0.9·Δx/(v_th + v_stream)
+        │   │                                  #     - Computes fnum for target PPC=25 (or 50 if Kn>10)
+        │   │                                  #     - Caps total particles at 1.5M (performance bound)
+        │   │                                  #     - Enforces MIN_STEPS=50000 (adequate sampling)
+        │   │                                  #   Output: ../production_output/matrix_results_{timestamp}.csv
+        │   │
+        │   ├── run_refinement.sh              # GRID CONVERGENCE STUDY
+        │   │                                  #   Worst-case: d=10μm, v=700 m/s.
+        │   │                                  #   Grids: N ∈ {10, 16, 22, 28, 34, 40}.
+        │   │                                  #   Fixed dt (from N=40 CFL) to isolate grid variable.
+        │   │                                  #   Dynamic fnum to maintain PPC ≈ 50 (or cap at 1.5M).
+        │   │                                  #   Criterion: drag change < 2% between successive levels.
+        │   │                                  #   Output: ../runtime_output/grid_convergence_{timestamp}.csv
+        │   │
+        │   ├── run_fnum_refinement.sh         # STATISTICAL (PARTICLE) CONVERGENCE STUDY
+        │   │                                  #   Worst-case: d=10μm, v=700 m/s, N=40 (locked).
+        │   │                                  #   fnum values: {10M, 5M, 2M, 1M, 0.5M}
+        │   │                                  #   → PPC from 4.8 to 96.4 particles/cell.
+        │   │                                  #   Output: ../runtime_output/fnum_convergence_{timestamp}.csv
+        │   │
+        │   ├── run_time_refinement.sh         # TIMESTEP (CFL) CONVERGENCE STUDY
+        │   │                                  #   Worst-case: d=10μm, v=700 m/s, N=40, fnum=1M (locked).
+        │   │                                  #   dt values: {4×, 2×, 1×, 0.5×, 0.25×} DT_CFL.
+        │   │                                  #   Constant physical time base (5000 × DT_CFL).
+        │   │                                  #   Output: ../runtime_output/time_convergence_{timestamp}.csv
+        │   │
+        │   ├── run_mesh_refinement.sh         # SURFACE MESH CONVERGENCE STUDY
+        │   │                                  #   Same worst-case parameters.
+        │   │                                  #   Tests: data.sphere (192), data_1200.sphere,
+        │   │                                  #   data_2400.sphere3d.
+        │   │                                  #   Output: ../runtime_output/mesh_convergence_{timestamp}.csv
+        │   │
+        │   ├── run_null.sh                    # ZERO-VELOCITY (F₀) CALIBRATION
+        │   │                                  #   Runs v=0 for all 5 diameters.
+        │   │                                  #   Measures the boundary-bias offset F₀(d).
+        │   │                                  #   Also runs 100nm@v=700 to check velocity dependence.
+        │   │                                  #   This offset is subtracted from all production data.
+        │   │
+        │   ├── run_steadystate_proof.sh       # STEADY-STATE PROOF
+        │   │                                  #   Uses in.steadystate_proof.
+        │   │                                  #   Runs d=10μm@v=700 (worst-case transient).
+        │   │                                  #   2× production step count (transient visible in time series).
+        │   │                                  #   Output: _timeseries.txt, _surface_cumul.txt, _config.txt
+        │   │
+        │   └── run_alpha1_single.sh           # α=1 CONTROL CASE
+        │   │                                  #   Uses validation_in.drag.
+        │   │                                  #   d=1μm@v=700, N=34, α=1.0 (fully accommodated).
+        │   │                                  #   Compares DSMC with CLL α=1 vs analytical diffuse reference.
+        │   │
+        │   ├── test_d100nm_v0                 # (Manual test file — ignore)
+        │   ├── test_d100nm_v0_blocks          # (Manual test file — ignore)
+        │   ├── force_blocks.txt               # (Sample output file — ignore)
+        │   ├── log.sparta                     # (Sample log — ignore)
+        │   ├── run_matrix.sh                  # (Deprecated — do not use)
+        │   └── mesh refinement/               # (Empty — do not use)
+        │
+        ├── production_output/                 # *** PRODUCTION DATA (Created by run_30case_matrix.sh) ***
+        │   ├── matrix_results_{timestamp}.csv  # Master CSV: columsn Diameter_m,Velocity_ms,...
+        │   ├── null_results_{timestamp}.csv    # Zero-velocity calibration data
+        │   ├── force_D{d}_V{v}_{timestamp}.txt # Per-case surface force dumps (SPARTA format)
+        │   └── log_D{d}_V{v}_{timestamp}.log   # Per-case SPARTA log files
+        │
+        ├── runtime_output/                    # *** REFINEMENT DATA (Created by refinement scripts) ***
+        │   ├── grid_convergence_{timestamp}.csv
+        │   ├── fnum_convergence_{timestamp}.csv
+        │   ├── time_convergence_{timestamp}.csv
+        │   ├── mesh_convergence_{timestamp}.csv
+        │   ├── refinement_N{N}.log             # Per-grid log files
+        │   ├── force_N{N}.txt                  # Per-grid force files
+        │   ├── steadystate_proof/              # Steady-state proof outputs
+        │   │   └── ss_proof_*.txt
+        │   └── ... (various refinement logs)
+        │
+        ├── post_processing/                   # *** MATLAB ANALYSIS SCRIPTS ***
+        │   │
+        │   ├── plot_matrix_results.m          # FIGURE 5.1: 30-case drag matrix
+        │   │                                  #   Makes two-panel log-log plot:
+        │   │                                  #   (a) Drag vs diameter at fixed velocity
+        │   │                                  #   (b) Drag vs velocity at fixed diameter
+        │   │                                  #   Reads: matrix_results_{timestamp}.csv
+        │   │
+        │   ├── theoretical_validation.m       # FIGURE 5.2: Validation vs analytical models
+        │   │                                  #   Plots DSMC data against Epstein, Baines,
+        │   │                                  #   Stokes (no-slip), Cunningham (slip-corrected).
+        │   │                                  #   4-panel figure (v=20, 100, 550, 700 m/s).
+        │   │
+        │   ├── fdrag_Velocity_validation.m    # FIGURE 5.3: Force vs velocity
+        │   │                                  #   Two-panel figure:
+        │   │                                  #   (a) 100nm droplet, Kn=1230
+        │   │                                  #   (b) 10μm droplet, Kn=12.3
+        │   │
+        │   ├── validation_F_vs_v_S.m          # FIGURES 5.4–5.6: Comprehensive validation
+        │   │                                  #   3 figures:
+        │   │                                  #   1. Epstein-collapse (F/F_Epstein vs speed ratio S)
+        │   │                                  #   2. Continuum failure (Cunningham/DSMC, Stokes/DSMC vs d)
+        │   │                                  #   3. Scaling exponents (dⁿ and vᵐ power-law fits)
+        │   │
+        │   ├── Fdrag_v_d_influence.m          # SECTION 5.1: Parametric trends figure
+        │   │                                  #   Similar to plot_matrix_results but different layout.
+        │   │
+        │   ├── stopping_distance_analysis.m   # FIGURE 6.1: Stopping distance analysis
+        │   │                                  #   Velocity decay vs distance for ≤1μm droplets.
+        │   │                                  #   Reference distances: 480mm, 1300mm.
+        │   │                                  #   Fits stopping distance law: x_stop ∝ d·v₀.
+        │   │
+        │   ├── velocity_vs_distance_posprocessing.m  # FIGURE 6.2: Full trajectory simulator
+        │   │                                  #   Plots velocity decay curves for ALL diameters
+        │   │                                  #   and velocities. Subplot per diameter.
+        │   │
+        │   ├── safe_zone_pp_clean.m           # FIGURE 6.3: Penetration contour map (clean)
+        │   │                                  #   Interpolated contour map: travel distance
+        │   │                                  #   vs diameter and initial velocity.
+        │   │                                  #   Reference planes at 480mm and 1300mm.
+        │   │
+        │   ├── safe_zone_pp.m                 # FIGURE 6.3 alternative (older version)
+        │   │
+        │   ├── steadystate_proof_plot.m       # FIGURE 4.1: Steady-state proof
+        │   │                                  #   Two-panel figure:
+        │   │                                  #   (a) Full force time history with transient shaded
+        │   │                                  #   (b) Cumulative running mean with ±2% band
+        │   │                                  #   Usage: steadystate_proof_plot()
+        │   │
+        │   ├── steadystate_convergence.m      # Steady-state convergence diagnostic
+        │   │                                  #   Usage: steadystate_convergence()
+        │   │
+        │   ├── refinement_postprocessing.m    # Grid convergence dashboard
+        │   │                                  #   2-panel: Drag vs N + % change vs N
+        │   │
+        │   ├── grid_conv_1706.m               # Grid convergence dashboard (older version)
+        │   │
+        │   ├── fnum_postprocessing.m          # Particle (fnum) convergence dashboard
+        │   │                                  #   Two y-axes: Drag force (left) + % change (right)
+        │   │
+        │   ├── timestep_postprocessing.m      # Timestep convergence dashboard
+        │   │                                  #   2-graph figure + workload tracker
+        │   │
+        │   ├── mesh_refinement_postprocessing.m  # Mesh convergence dashboard
+        │   │
+        │   ├── particle_animation.m           # 2D flow visualization animation (MATLAB)
+        │   │                                  #   Shows H₂ molecules flowing past tin sphere
+        │   │                                  #   with reflection at CLL α=0.3.
+        │   │
+        │   ├── delete/                        # Deprecated scripts (ignore)
+        │   ├── figures/                       # Generated .fig and .png output
+        │   └── post_processing plots/         # Additional generated plots
+        │
+        └── visualization/                     # *** 2D FLOW VISUALIZATION ***
+            ├── vis_flow.drag                  # SPARTA 2D input for flow viz
+            │                                  #   2D domain, circle cross-section.
+            │                                  #   Dumps PPM images showing particle velocities.
+            │                                  #   Run: mpirun -np 4 spa_mpi < vis_flow.drag
+            │
+            ├── vis_circle.surf                # Circle surface for 2D viz
+            ├── circle_2d.surf                 # (alternative circle surface)
+            │
+            └── make_video.sh                  # Convert PPM frames to MP4 video
+                                                 #   Usage: bash make_video.sh [framerate]
+                                                 #   Requires ffmpeg.
+```
+
+**Outside `sparta/`, in the parent repo:**
+
+```
+BEP-ASML-Deliverable/
+└── BEP_Irene_0107/                            # LaTeX report source
+    ├── main.tex                               # Master LaTeX document
+    ├── General/
+    │   ├── Preamble.tex                       # Document class, packages
+    │   ├── Settings.tex                       # Formatting, colours, tikz
+    │   └── references1.bib                    # Bibliography (~30 references)
+    ├── Chapters/
+    │   ├── 0. Frontpage.tex
+    │   ├── 0.ListSymbols.tex
+    │   ├── 1. Introduction.tex                # EUV context, Knudsen, Boltzmann
+    │   ├── 2.BackgroundResearch.tex            # DSMC method, drag theory
+    │   ├── 3.Modeling and Num meth.tex         # Domain, BCs, matrix, dynamic optimiser
+    │   ├── 4.RefinementAnalysis.tex            # Grid/fnum/time/mesh convergence
+    │   ├── 5.Parametric Results.tex            # 30-case matrix, validation
+    │   ├── 6.Final Analysis and app.tex        # Trajectories, safe zone
+    │   ├── 7.Conclusion.tex                   # Conclusions, limitations, recommendations
+    │   └── A. Appendix A.tex                  # Supplementary data
+    └── Figures/                                # All report figures
+```
+
+---
+
+## 3. Prerequisites & Installation
+
+### 3.1 System Requirements
+
+- Linux (tested on Ubuntu 22.04)
+- C++ compiler with C++11 support (gcc ≥ 9)
+- MPI (OpenMPI ≥ 4.0 or MPICH)
+- CMake ≥ 3.10
+- MATLAB ≥ R2020b (for post-processing)
+- ffmpeg (optional, for video)
+- bash, awk
+
+### 3.2 Installing SPARTA (from source)
+
+```bash
+# Step 1: Clone SPARTA from the official Sandia repository
+git clone https://github.com/sparta/sparta.git
+cd sparta
+
+# Step 2: Build with CMake (recommended)
+mkdir build && cd build
+cmake ../cmake -DCMAKE_BUILD_TYPE=RELEASE
+make -j$(nproc)
+
+# The binary is at: build/sparta
+# You can verify it works:
+./sparta -h
+```
+
+**Alternative: Classic make build** (if CMake is unavailable):
+
+```bash
+cd sparta/src
+make mpi -j$(nproc)
+# Binary at: src/spa_mpi
+```
+
+### 3.3 Configuring the SPARTA Binary Path
+
+All pipeline scripts hard-code a SPARTA path like:
+
+```bash
+/home/ilozano/sparta/src/spa_mpi
+```
+
+**You MUST update this path** in every script you intend to run. There are two ways:
+
+**Option A — Symlink (recommended, one-time setup):**
+
+```bash
+mkdir -p ~/sparta/src
+ln -s /path/to/your/sparta/build/sparta ~/sparta/src/spa_mpi
+```
+
+**Option B — Edit each script:** Change the line in every `run_*.sh` script:
+
+```bash
+# Find this line:
+mpirun -np 4 /home/ilozano/sparta/src/spa_mpi ...
+
+# Replace with:
+mpirun -np 4 /path/to/your/sparta/build/sparta ...
+```
+
+Scripts that need updating:
+| Script | Line(s) |
+|--------|---------|
+| `run_30case_matrix.sh` | 146 |
+| `run_refinement.sh` | 193 |
+| `run_fnum_refinement.sh` | 79 |
+| `run_time_refinement.sh` | 67 |
+| `run_mesh_refinement.sh` | (check for path) |
+| `run_null.sh` | 8 |
+| `run_steadystate_proof.sh` | 33 |
+| `run_alpha1_single.sh` | 56 |
+
+### 3.4 Verify SPARTA Build with a Minimal Test
+
+Before launching full simulations, run a 2-second test:
+
+```bash
+cd sparta/simulations/tin_drag/pipeline
+mpirun -np 4 /path/to/sparta \
+    -var vel_val 100 \
+    -var diam_scale 1e-6 \
+    -var fnum_val 100000 \
+    -var grid_res 10 \
+    -var t_step 1e-9 \
+    -var TRANSIENT_STEPS 100 \
+    -var STEADY_STEPS 100 \
+    -var out_name "test_output" \
+    < in.drag
+```
+
+If you see "Total wall time: ..." without errors, SPARTA is working.
+
+---
+
+## 4. Global Assets: The Physical Model
+
+This section explains what every number in the global asset files means. You should understand this before running any simulation.
+
+### 4.1 `hydrogen.species`
+
+```
+H2 2.016 3.346e-27 2 0.2 2 1.9e-5 6331.0 1.0 0
+```
+
+| Field | Value | Meaning |
+|-------|-------|---------|
+| Name | H2 | Species identifier |
+| Mol. weight | 2.016 | Atomic mass units (amu) |
+| Mass (kg) | 3.346e-27 | Molecular mass of H₂ |
+| Rot. DOF | 2 | Diatomic molecule: 2 rotational degrees of freedom |
+| Rot. relax | 0.2 | Rotational collision number (20% of collisions relax rotation) |
+| Vib. DOF | 2 | Vibrational DOF (inactive at 293 K — too cold) |
+| Vib. relax | 1.9e-5 | Vibrational collision number (effectively infinite at 293 K) |
+| Char. vib. T | 6331.0 | Characteristic vibrational temperature of H₂ (K) |
+| Species type | 1.0 | Standard gas species |
+| Flags | 0 | No special treatment |
+
+The key physics: at 293 K, H₂ has fully excited translation and rotation but **no vibrational excitation** (vibrational modes need T ≫ 6331 K).
+
+### 4.2 `hydrogen.vhs`
+
+```
+H2 2.72e-10 0.67 273.15 1.0
+```
+
+| Field | Value | Meaning |
+|-------|-------|---------|
+| Species | H2 | Must match species file |
+| d_ref (m) | 2.72e-10 | VHS reference diameter at T_ref |
+| ω | 0.67 | VHS viscosity exponent (ω=0.5 = hard sphere, ω=1.0 = Maxwell) |
+| T_ref (K) | 273.15 | Reference temperature |
+| ε/k_B (K) | 1.0 | VHS well depth (not used for VHS, placeholder) |
+
+This VHS model determines the mean free path:
+
+λ = 1 / [√2 · n · π · d_ref² · (T/T_ref)^{ω-0.5}]
+
+At 100 Pa, 293 K: λ ≈ 123 μm.
+
+### 4.3 `data.sphere` (Surface Mesh)
+
+A unit sphere represented by 98 points and 192 triangles (4 subdivisions per face = 4×4 quads on 6 cube faces mapped to sphere). The projected-area error is 0.55%, verified in the report.
+
+At runtime, SPARTA scales it by `diam_scale` and translates it to `(Lx/2, Ly/2, Lz/2)` via:
+
+```sparta
+read_surf ${mesh_file} scale ${diam_scale} ${diam_scale} ${diam_scale} ftrans 0.5 0.5 0.5
+```
+
+Two larger meshes are available (not used in production):
+- `data_1200.sphere` — 1200 triangles
+- `data_2400.sphere3d` — 2400 triangles
+
+---
+
+## 5. The Master SPARTA Input Template (`in.drag`)
+
+This is the core of the simulation. Located at `pipeline/in.drag`.
+
+### 5.1 How Parameter Injection Works
+
+All case-specific parameters are passed via SPARTA's `-var` command-line flag:
+
+```bash
+mpirun -np 4 spa_mpi \
+    -var diam_scale 100e-9 \
+    -var vel_val 700 \
+    -var fnum_val 3 \
+    -var grid_res 40 \
+    -var t_step 5.84431e-11 \
+    -var TRANSIENT_STEPS 25000 \
+    -var STEADY_STEPS 25000 \
+    -var out_name "output.txt" \
+    < in.drag
+```
+
+Inside `in.drag`, `${diam_scale}` is replaced with `100e-9`, `${vel_val}` with `700`, etc.
+
+### 5.2 Line-by-Line Explanation of `in.drag`
+
+```sparta
+# 1. SIMULATION INITIALIZATION
+seed 12345             # Random number seed (fixed for reproducibility)
+dimension 3            # 3D simulation
+global gridcut 0.0 comm/sort yes  # No cell cutting, enable MPI communication sorting
+
+# 2. DOMAIN & GRID
+boundary oo rr rr      # x: outflow/outflow, y: reflect/reflect, z: reflect/reflect
+                       # "o" = molecules leave freely, "r" = molecules reflect specularly
+create_box 0 ${Lx} 0 ${Ly} 0 ${Lz}   # Box from (0,0,0) to (50d, 50d, 50d)
+create_grid ${grid_res} ${grid_res} ${grid_res}   # Cartesian grid, N³ cells
+balance_grid rcb cell  # Recursive coordinate bisection load balancing
+
+# 3. GAS PROPERTIES
+global nrho 2.47e22 fnum ${fnum_val}  # Number density n = P/(k_B·T) = 100/(1.38e-23·293)
+                                       # fnum = macroparticle weight (each sim particle represents fnum real molecules)
+species ../global_assets/hydrogen.species H2   # Load H2 molecular model
+collide vss all ../global_assets/hydrogen.vhs  # VHS collision model for all species
+
+# 4. FLOW INJECTION
+mixture inlet H2 temp 293.0 vstream ${vel_val} 0.0 0.0  # Inlet gas: H2 at 293K, velocity in +x
+fix in emit/face inlet xlo  # Inject molecules from the x=0 plane
+
+# 5. SPHERE SURFACE
+read_surf ${mesh_file} scale ${diam_scale} ${diam_scale} ${diam_scale} ftrans 0.5 0.5 0.5
+                           # Read sphere mesh, scale to droplet size, centre in box
+surf_collide 1 cll 293.0 0.3 0.3 0.3 0.0  # CLL model: Twall=293K, α_n=α_t=α_rot=0.3, α_vib=0.0
+surf_modify all collide 1  # All surfaces use collision model 1
+
+# 6. COMPUTES & FIXES
+compute ID_drag_compute surf all all fx fy fz  # Per-triangle force on all surfaces
+
+# PHASE 1: TRANSIENT (flow establishment, no measurement)
+run ${TRANSIENT_STEPS}
+
+# PHASE 2: STEADY-STATE SAMPLING
+fix f_drag_cumul ave/surf all 1 ${STEADY_STEPS} ${STEADY_STEPS} c_ID_drag_compute[*]
+    # Cumulative average = sample every step (N=1), average over STEADY_STEPS,
+    # output once at end (Nfreq = STEADY_STEPS)
+
+fix f_drag_blocks ave/surf all 1 1000 1000 c_ID_drag_compute[*]
+    # Block averages every 1000 steps (for convergence diagnostics)
+
+dump 1 surf all ${STEADY_STEPS} ${out_name} id f_f_drag_cumul[*]
+    # Dump cumulative average once at end of steady window
+dump 2 surf all 1000 ${out_name}_blocks id f_f_drag_blocks[*]
+    # Dump block averages every 1000 steps
+
+run ${STEADY_STEPS}     # Run the steady-state sampling phase
+```
+
+### 5.3 The CLL Surface Model
+
+```
+surf_collide 1 cll 293.0 0.3 0.3 0.3 0.0
+```
+
+This sets:
+- **Twall = 293 K** — droplet surface temperature (isothermal, cold assumption)
+- **α_n = 0.3** — normal accommodation coefficient (30% diffuse, 70% specular)
+- **α_t = 0.3** — tangential accommodation coefficient
+- **α_rot = 0.3** — rotational accommodation coefficient
+- **α_vib = 0.0** — vibrational accommodation (inactive at 293 K)
+
+Values of α:
+- α = 0 → fully specular reflection (no momentum transfer to surface)
+- α = 1 → fully diffuse reflection (maximum momentum transfer, thermalised)
+
+The chosen α = 0.3 is an **assumption** — no measured H₂–Sn accommodation data exist. This is the single largest uncertainty in absolute drag magnitude.
+
+---
+
+## 6. Step-by-Step: Running Simulations
+
+All commands run from:
+
+```bash
+cd /path/to/sparta/simulations/tin_drag/pipeline/
+```
+
+### 6.1 Before You Run Anything
+
+**Critical: Update the SPARTA path.** Open each script in a text editor and find the line:
+
+```bash
+mpirun -np 4 /home/ilozano/sparta/src/spa_mpi ...
+```
+
+Replace the path with the location of your SPARTA binary. Change `-np 4` to match your available CPU cores (e.g., `-np 8` if you have 8 cores).
+
+### 6.2 Quick Test (2 minutes)
+
+Run a single minimal case to verify everything works:
+
+```bash
+# First update the SPARTA path in the command below
+mpirun -np 4 /path/to/your/sparta \
+    -var vel_val 700 \
+    -var diam_scale 1e-6 \
+    -var fnum_val 10000 \
+    -var grid_res 10 \
+    -var t_step 1e-9 \
+    -var TRANSIENT_STEPS 100 \
+    -var STEADY_STEPS 100 \
+    -var out_name "../runtime_output/test_force" \
+    < in.drag
+```
+
+Expected output (last few lines of terminal):
+```
+Step CPU Np Ncoll Nscoll
+...
+Loop time of ... seconds
+```
+
+Check the output file:
+```bash
+cat ../runtime_output/test_force
+```
+
+You should see a SPARTA dump with surface IDs and force values. If you get "command not found" or "symbol not found" errors, the SPARTA path is wrong or the build failed.
+
+### 6.3 Grid Convergence Study (10–30 minutes)
+
+**What it does:** Verifies that the drag force does not depend on grid resolution. Runs d=10μm, v=700 m/s at 6 grid levels (N=10, 16, 22, 28, 34, 40). The convergence criterion is |ΔF/F| < 2%.
+
+```bash
+bash run_refinement.sh
+```
+
+**Terminal output you will see:**
+```
+=========================================================
+ SPARTA DSMC GRID CONVERGENCE REFINEMENT STUDY
+=========================================================
+...
+Grid level: 10³ = 1000 cells
+  Cell size:            5.00000000e-05 m
+  fnum (used):          61750000
+  PPC achieved:         0.78
+  Executing SPARTA simulation...
+  Drag force |Fx|:     1.23456789e-12 N = 1.2346 pN
+  Change from prev:     —
+  Convergence status:   no
+...
+Grid level: 40³ = 64000 cells
+  ...
+  Drag force |Fx|:     9.87654321e-13 N = 0.9877 pN
+  Change from prev:     -0.345%
+  Convergence status:   yes
+```
+
+**Output files created:**
+- `../runtime_output/grid_convergence_{timestamp}.csv` — machine-readable results
+- `../runtime_output/refinement_N{10,16,22,28,34,40}.log` — per-case SPARTA logs
+- `../runtime_output/force_N{10,16,22,28,34,40}.txt` — per-case force dumps
+
+**What to check for convergence:**
+1. The percentage change between successive N values drops below 2%
+2. The change is monotonically decreasing (no oscillations)
+3. The drag value flattens at higher N
+
+**If the script fails:**
+- Check `../runtime_output/refinement_N*.log` for SPARTA error messages
+- The most common cause: wrong SPARTA path or MPI not installed
+
+### 6.4 Zero-Velocity Calibration (5 minutes)
+
+**What it does:** Measures the boundary-bias offset F₀(d) — the non-zero force that appears even at v=0 due to the asymmetric boundary conditions (outflow at +x, inflow at -x even with vstream=0).
+
+```bash
+bash run_null.sh
+```
+
+**Note:** This script uses a different SPARTA path format (`~/sparta/build/sparta`) and the `-in` flag instead of `<` redirect. Update the path:
+
+```bash
+SPARTA=~/sparta/build/sparta   # ← change this line
+```
+
+**Terminal output:**
+```
+--- d=100e-9 @ v=0 (N=40, fnum=3) ---
+...
+  F₀(100e-9) = 2.345678e-17 N
+--- d=500e-9 @ v=0 (N=24, fnum=558) ---
+...
+--- 100nm @ v=700 (same N=40, fnum=3) ---
+...
+  Difference (≈F_drag) = 1.234567e-15 N
+```
+
+**Output:** `../production_output/null_results_{timestamp}.csv`
+
+**Why this matters:** The raw drag force from SPARTA has a background offset. All production data must be corrected:
+
+```
+F_true(v) = F_raw(v) - F₀
+```
+
+This correction is applied inside every MATLAB script automatically.
+
+### 6.5 Production 30-Case Matrix Sweep (5–10 hours)
+
+**What it does:** This is the main simulation campaign. Runs all 5 diameters × 6 velocities = 30 cases with dynamically-optimised parameters.
+
+```bash
+bash run_30case_matrix.sh
+```
+
+**This will take several hours.** Each case runs ~50,000 steps with up to 1.5M particles.
+
+**What you will see in the terminal (progress log):**
+```
+=========================================================
+ INITIATING 30-CASE DYNAMIC MATRIX SWEEP
+=========================================================
+Configuring case: Diameter = 100e-9 m | Velocity = 20 m/s
+   -> Dynamics: Grid 40^3 | Fnum 3 | dt 5.84431e-11 s | Steps 50000 | PPC: 8
+  Executing SPARTA...
+  Resolved Drag: 1.234567e-17 N
+---------------------------------------------------------
+Configuring case: Diameter = 100e-9 m | Velocity = 100 m/s
+   -> Dynamics: Grid 40^3 | Fnum 3 | dt 5.84431e-11 s | Steps 50000 | PPC: 8
+  ...
+MATRIX SWEEP COMPLETE. Telemetry saved to: ../production_output/matrix_results_20260615_123456.csv
+```
+
+**Output files created:**
+- `../production_output/matrix_results_{timestamp}.csv` — **MASTER DATA FILE** used by all MATLAB scripts
+- `../production_output/force_D{d}_V{v}_{timestamp}.txt` — per-case force dumps
+- `../production_output/log_D{d}_V{v}_{timestamp}.log` — per-case logs
+
+**Columns in the CSV:**
+| Column | Example | Meaning |
+|--------|---------|---------|
+| Diameter_m | 1e-07 | Droplet diameter in metres |
+| Velocity_ms | 20 | Stream velocity in m/s |
+| Grid_N | 40 | Grid cells per dimension |
+| Fnum | 3 | Macroparticle weighting factor |
+| Timestep_s | 5.84431e-11 | Simulation timestep |
+| Total_Steps | 50000 | Total steps (25000+25000) |
+| Drag_Fx | 1.234e-17 | Raw drag force in Newtons (positive = absolute value) |
+
+**Warning messages you may see:**
+```
+-> ⚠️ NOTE: PPC = 8 < 15 — low but tolerable with long sampling
+```
+This is expected for the 100 nm cases. At Kn > 1000, intermolecular collisions are negligible, so low PPC is physically acceptable. The long averaging window compensates.
+
+```
+-> ⚠️ WARNING: Zero steady-state surface collisions — insufficient sampling
+```
+If you see this, the simulation had too few surface collisions to produce a reliable drag value. This would indicate the fnum is too high (too few particles) or the run is too short.
+
+**Interrupting and resuming:** The script runs cases sequentially. If interrupted, you can:
+1. Delete the last partial entry from the CSV
+2. Re-run the script — it will overwrite the CSV
+3. Or manually run individual cases (see §6.7)
+
+### 6.6 Timestep Convergence Study (20–40 minutes)
+
+**What it does:** Verifies that the chosen timestep does not affect results. Tests dt = {4×, 2×, 1×, 0.5×, 0.25×} of the CFL timestep at constant physical time.
+
+```bash
+bash run_time_refinement.sh
+```
+
+Update the SPARTA path inside the script first.
+
+**Output:** `../runtime_output/time_convergence_{timestamp}.csv`
+
+### 6.7 Fnum (Statistical) Convergence Study (20–40 minutes)
+
+**What it does:** Verifies that the number of simulated particles is sufficient. Tests fnum = {10M, 5M, 2M, 1M, 0.5M}.
+
+```bash
+bash run_fnum_refinement.sh
+```
+
+**Output:** `../runtime_output/fnum_convergence_{timestamp}.csv`
+
+### 6.8 Steady-State Proof (1–2 hours)
+
+**What it does:** Proves that the force converges within the steady-state window by recording the full force time series from step 0.
+
+```bash
+bash run_steadystate_proof.sh
+```
+
+**Output:**
+- `../runtime_output/steadystate_proof/ss_proof_{label}_{timestamp}_timeseries.txt`
+- `../runtime_output/steadystate_proof/ss_proof_{label}_{timestamp}_surface_cumul.txt`
+- `../runtime_output/steadystate_proof/ss_proof_{label}_{timestamp}_config.txt`
+
+### 6.9 Alpha=1 Control Case (30 minutes) [not fully working, so ignore]
+
+**What it does:** Runs one case with α=1.0 (fully accommodated CLL) to compare DSMC against the analytical diffuse/specular reference.
+
+```bash
+bash run_alpha1_single.sh
+```
+
+This uses `validation_in.drag` instead of `in.drag`.
+
+**Output:**
+- `../runtime_output/alpha1_d1um_v700_global_cumul.txt` — global cumulative force
+- `../runtime_output/alpha1_d1um_v700_global_blocks.txt` — block-wise force history
+- `../runtime_output/alpha1_d1um_v700.log` — full SPARTA log
+
+### 6.10 Running a Single Custom Case Manually
+
+If you need to run one specific (d, v) pair with custom parameters:
+
+```bash
+mpirun -np 4 /path/to/sparta \
+    -var vel_val 700 \
+    -var diam_scale 1e-6 \
+    -var fnum_val 10000 \
+    -var grid_res 18 \
+    -var t_step 1.29874e-09 \
+    -var TRANSIENT_STEPS 25000 \
+    -var STEADY_STEPS 25000 \
+    -var out_name "../production_output/force_custom.txt" \
+    < in.drag
+```
+
+To extract the drag force from the output:
+```bash
+awk 'BEGIN {sum=0} /^ITEM:/ {next} /^#/ {next} NF==4 {sum += $2} END {if (sum<0) sum=-sum; printf "%e", sum}' ../production_output/force_custom.txt
+```
+
+---
+
+## 7. Step-by-Step: Post-Processing in MATLAB
+
+### 7.1 Before You Start
+
+1. **Ensure a production matrix CSV exists** in `post_processing/`. Either:
+   - Run `run_30case_matrix.sh` (§6.5), OR
+   - Copy an existing CSV from `production_output/` to `post_processing/`
+
+2. Some scripts auto-detect the newest CSV by filename pattern. Others reference a hard-coded name like `matrix_results_20260601_125031.csv`. **You may need to update the filename** inside the script if you ran a new sweep.
+
+### 7.2 Script-by-Script Guide
+
+#### 7.2.1 Plot 30-Case Drag Matrix (`plot_matrix_results.m`)
+
+**What it produces:** Figure 5.1 in the report — two-panel log-log plot of drag force:
+- Panel (a): Drag vs diameter at each fixed velocity
+- Panel (b): Drag vs velocity at each fixed diameter
+
+**How to run:**
+```matlab
+>> cd /path/to/sparta/simulations/tin_drag/post_processing
+>> plot_matrix_results
+```
+
+**What it does internally:**
+1. Reads the CSV
+2. Fits a linear model F(v) per diameter to extract F₀ (intercept at v=0)
+3. Subtracts F₀ from all raw drag values
+4. Removes any zero/negative forces
+5. For each velocity, fits power law F ∝ d^n
+6. For each diameter, fits power law F ∝ v^m
+7. Creates a publication-quality figure
+
+**If the script errors:**
+```
+Error using readtable
+File 'matrix_results_20260601_125031.csv' not found.
+```
+→ Update the `filename` variable on line 8 to match your CSV name.
+#### 7.2.2 Theoretical Validation (`theoretical_validation.m`)
+
+**What it produces:** Figure 5.2 — 4-panel figure comparing DSMC drag against Epstein, Baines, Stokes, and Cunningham models at v = 20, 100, 550, 700 m/s.
+
+**How to run:**
+```matlab
+>> theoretical_validation
+```
+
+**What it does internally:**
+1. Loads DSMC data with F₀ correction (same as above)
+2. Computes Epstein drag: F_Ep = (π/2) · d² · ρ_gas · v · c̄ · (1 + α·π/8) where c̄ = √(8k_BT/πm) is mean thermal speed
+3. Computes Baines drag: generalised free-molecular resistance valid at finite speed ratio S
+4. Computes Stokes drag: F_St = 3πμdv (no-slip continuum, expected to fail badly)
+5. Computes Cunningham drag: Stokes × slip correction factor C(Кn)
+6. Plots all on log-log axes
+
+**Key physics the figure demonstrates:**
+- Stokes overpredicts by 1–4 orders of magnitude → continuum invalid
+- Cunningham is within factor ~2 → slip correction helps but still imperfect
+- DSMC follows F ∝ d² (same slope as Epstein/Baines) → correct kinetic scaling
+- ~49% drag deficit at large d, high v (visible as DSMC below Epstein line)
+
+#### 7.2.3 Force vs Velocity Validation (`fdrag_Velocity_validation.m`)
+
+**What it produces:** Figure 5.3 — two-panel figure of F vs v:
+- Panel (a): 100 nm droplet (Kn = 1230)
+- Panel (b): 10 μm droplet (Kn = 12.3)
+
+```matlab
+>> fdrag_Velocity_validation
+```
+
+#### 7.2.4 Comprehensive Validation (`validation_F_vs_v_S.m`) [ I never used this in the end, so data input may not be updated]
+
+**What it produces:** Three figures:
+1. Epstein-collapse: F/F_Epstein vs speed ratio S
+2. Continuum failure: Cunningham/DSMC and Stokes/DSMC ratios vs d
+3. Scaling exponents: dⁿ and vᵐ power-law fits with confidence bounds
+
+```matlab
+>> validation_F_vs_v_S
+```
+
+This is the most comprehensive validation script and includes error handling for missing data. It auto-detects the newest CSV.
+
+#### 7.2.5 Stopping Distance Analysis (`stopping_distance_analysis.m`)
+
+**What it produces:** Figure 6.1 — Velocity decay vs distance for ≤ 1 μm droplets. Shows reference distances at 480 mm and 1300 mm.
+
+```matlab
+>> stopping_distance_analysis
+```
+
+**What it does internally:**
+1. Loads production data with F₀ correction
+2. For each diameter, fits F = a·v + b·v² (linear + quadratic drag law)
+3. Solves the ODE: m·dv/dt = -F(v) → m·v·dv/dx = -F(v)
+4. Integrates analytically: x(v) = m · ∫[v/(a·v + b·v²)] dv
+5. Plots velocity vs distance curves
+6. Reports stopping distances at reference planes
+
+**Key outputs printed in the console:**
+```
+--- Stopping Distance Results ---
+d=100 nm: x(632 m/s) = 1.30 m
+d=500 nm: x(112 m/s) = 1.30 m  
+d=1 um:  x(58 m/s) = 1.30 m
+---
+```
+
+#### 7.2.6 Full Trajectory Simulator (`velocity_vs_distance_posprocessing.m`)
+
+**What it produces:** Figure 6.2 — Subplot array (one per diameter) showing velocity decay curves for all initial velocities.
+
+```matlab
+>> velocity_vs_distance_posprocessing
+```
+
+#### 7.2.7 Safe Zone Contour Map (`safe_zone_pp_clean.m`)
+
+**What it produces:** Figure 6.3 — Interpolated contour map showing travel distance as a function of diameter and initial velocity. Two reference planes: 480 mm and 1300 mm.
+
+```matlab
+>> safe_zone_pp_clean
+```
+
+**Interpretation:** Points below the 480 mm line are "safe" (stopped before reaching critical distance). Points above the 1300 mm line are "dangerous" (reach the far reference distance with significant kinetic energy remaining).
+
+#### 7.2.8 Steady-State Proof Plot (`steadystate_proof_plot.m`)
+
+**What it produces:** Figure 4.1 — Two-panel proof of steady-state convergence.
+
+```matlab
+% Auto-detect newest run:
+>> steadystate_proof_plot
+
+% Or specify the output directory:
+>> steadystate_proof_plot('../runtime_output/steadystate_proof')
+```
+
+**Panel (a):** Full force time history from step 0. Transient region is shaded. Shows force rising from zero during flow establishment then settling.
+
+**Panel (b):** Cumulative running mean in the steady window only. ±2% convergence band shown. Proves the time-average is stable.
+
+#### 7.2.9 Convergence Dashboards
+
+These scripts plot the refinement study outputs:
+
+```matlab
+>> refinement_postprocessing        % Grid convergence (Figure 4.3)
+>> fnum_postprocessing              % Particle convergence (Figure 4.4)
+>> timestep_postprocessing          % Timestep convergence (Figure 4.5)
+>> steadystate_convergence          % Block-wise steady-state check
+>> grid_conv_1706                   % Older grid convergence plot
+```
+
+Each auto-detects the newest CSV in `runtime_output/`.
+
+---
+
+## 8. Step-by-Step: 2D Flow Visualization
+
+### 8.1 SPARTA 2D Simulation
+
+Creates a 2D cross-section animation of H₂ molecules flowing past a tin sphere.
+
+```bash
+cd sparta/simulations/tin_drag/visualization
+
+# Update SPARTA path if needed, then:
+mpirun -np 4 /path/to/sparta < vis_flow.drag
+```
+
+This produces a series of PPM images: `image.0000.ppm`, `image.0001.ppm`, ..., `image.4499.ppm` (4500 frames = 500 transient + 4000 steady).
+
+Each frame shows particles coloured by x-velocity (red = fast rightward, blue = slow/leftward).
+
+### 8.2 Convert to Video
+
+```bash
+bash make_video.sh 30   # 30 fps
+```
+
+Produces `particle_animation.mp4`. Requires ffmpeg.
+
+### 8.3 MATLAB Animation
+
+For a simpler, code-based visualisation:
+
+```matlab
+>> particle_animation
+```
+
+This creates a MATLAB figure showing H₂ molecules (blue dots) flowing left-to-right past a circle (tin sphere). Molecules that hit the sphere reflect with CLL α=0.3 (partial accommodation). Runs until the figure is closed.
+
+---
+
+## 9. Step-by-Step: Compiling the Report
+
+The report is written in LaTeX. Source files are in:
+
+```
+ASML Deliverable/BEP_Irene_0107/
+```
+
+```bash
+cd "ASML Deliverable/BEP_Irene_0107"
+
+# First pass (generate .aux files for references)
+pdflatex main.tex
+
+# Bibliography
+bibtex main
+
+# Second pass (resolve cross-references)
+pdflatex main.tex
+
+# Third pass (final — everything resolved)
+pdflatex main.tex
+```
+
+Output: `main.pdf`
+
+**If using Overleaf:** Upload the entire `BEP_Irene_0107` folder (keeping the directory structure intact) and compile with pdfLaTeX.
+
+---
+
+## 10. Understanding the Output Files
+
+### 10.1 SPARTA Force Dump Format
+
+Files like `force_D1e-06_V700_20260615_123456.txt` use SPARTA's dump format:
+
+```
+ITEM: TIMESTEP
+25000
+ITEM: NUMBER OF SURFACES
+192
+ITEM: SURFACES id f_f_drag_cumul[1] f_f_drag_cumul[2] f_f_drag_cumul[3]
+1 -3.4567e-20  1.2345e-21  5.6789e-21
+2 -2.3456e-20  8.7654e-22  4.3210e-21
+...
+192  1.2345e-19 -2.3456e-21  3.4567e-21
+```
+
+- Column 1: triangle ID
+- Column 2: time-averaged Fx on that triangle (N)
+- Column 3: time-averaged Fy (N)
+- Column 4: time-averaged Fz (N)
+
+The total drag force is the sum of column 2 across all 192 triangles.
+
+### 10.2 SPARTA Log Format
+
+Files like `log_D1e-06_V700_20260615_123456.log` contain:
+
+```
+...
+Step CPU Np Ncoll Nscoll
+25000 12.34 1234567 987654 321
+26000 12.56 1234567 987654 321
+...
+```
+
+- Np: number of simulated particles
+- Ncoll: number of intermolecular collisions this step
+- Nscoll: number of surface collisions this step
+
+After the runs, timing info:
+```
+Total CPU time = 1234.56 seconds
+Total wall time = 345.67 seconds
+```
+
+### 10.3 Steady-State Proof Timeseries
+
+Format of `ss_proof_d10um_v700_20260615_123456_timeseries.txt`:
+
+```
+ITEM: TIMESTEP
+200
+ITEM: NUMBER OF SURFACES
+192
+ITEM: SURFACES id f_f_drag_blocks[1] f_f_drag_blocks[2] f_f_drag_blocks[3]
+1 -1.23e-20 ...
+...
+192 ...
+ITEM: TIMESTEP
+400
+...
+```
+
+Each ITEM:TIMESTEP block = one data point (average over RECORD_EVERY steps).
+
+---
+
+## 11. Key Physics Results Summary
+
+These are the main conclusions from the 30-case matrix. All numbers from the report.
+
+### 11.1 Drag Scaling
+
+| Quantity | Result |
+|----------|--------|
+| Diameter exponent | n ≈ 1.955–1.985 (F ∝ dⁿ, very close to d²) |
+| Velocity exponent | m ≈ 0.79–0.82 (F ∝ vᵐ, sub-linear) |
+| Physical origin | Free-molecular momentum transfer over projected area |
+
+### 11.2 Stopping Distances
+
+| Diameter | Slope x_stop/v₀ | v₀ to reach 1.30 m |
+|----------|----------------|-------------------|
+| 100 nm | 2.06 mm per (m/s) | 632 m/s |
+| 500 nm | 11.6 mm per (m/s) | 112 m/s |
+| 1 μm | 22.6 mm per (m/s) | 58 m/s |
+
+### 11.3 Drag Deficit
+
+| Condition | DSMC/Epstein ratio | Meaning |
+|-----------|-------------------|---------|
+| 100 nm, all v | ~1.0 | Perfect match with kinetic theory |
+| 10 μm, 700 m/s | ~0.51 | ~49% deficit (DSMC lower than Epstein) |
+| Physical cause | — | Finite-Kn effects + CLL vs analytical blend |
+
+### 11.4 Continuum Failure
+
+| Model | Stokes/DSMC ratio | Assessment |
+|-------|------------------|------------|
+| No-slip Stokes | 39 – 7.4×10³ | Fails catastrophically (1–4 orders of magnitude) |
+| Slip-corrected Cunningham | ~0.5–2 | Within factor ~2 (usable but imperfect) |
+
+---
+
+## 12. Known Limitations
+
+From Chapter 7 of the report. Critical for anyone using these results:
+
+### 12.1 ✅ Accommodation Coefficient (α = 0.3)
+
+**Problem:** The CLL coefficients α_n = α_t = α_rot = 0.3 are assumed, not measured. No experimental H₂–Sn accommodation data exist for these conditions.
+
+**Impact:** This is the single largest uncertainty in absolute drag magnitude. If actual α is higher, drag is higher → stopping distances are shorter. If α is lower, drag is lower → stopping distances are longer.
+
+**Recommendation:** An α-sensitivity study (α ∈ [0.1, 1.0]) would convert single-point estimates into defensible ranges.
+
+### 12.2 ✅ Isothermal, Rigid, Inert Droplet
+
+**Problem:** The droplet is modelled as a rigid sphere at 293 K. Real tin micro-particles originate molten (Tmelt ≈ 505 K), which changes the momentum of reflected molecules. Evaporation, deformation, and SnH₄ surface chemistry are neglected.
+
+**Impact:** Stopping distances could be different for hot (real) vs cold (simulated) particles. The hot-wall effect would increase drag (hotter surface → faster reflected molecules → more momentum transfer).
+
+### 12.3 ✅ Quasi-Steady Drag
+
+**Problem:** Each DSMC run computes steady drag at fixed v. The trajectory model applies this steady law to a decelerating particle. Unsteady / added-mass effects during deceleration are excluded.
+
+**Justification:** Timescale separation: τ_gas ~ 10⁻⁷ s ≪ τ_droplet ~ 10⁻³–10⁻² s.
+
+### 12.4 ✅ 1D Single-Particle Trajectory
+
+**Problem:** Only axial drag is modelled. No angular distribution, no particle-particle interactions, no bulk sweeping flow. Results are a "worst-case axial estimate".
+
+**Impact:** Real debris capture fraction in the chamber will be higher (more effective) due to the sweeping flow.
+
+### 12.5 ✅ Under-Resolved Large Droplets
+
+**Problem:** The 10 μm production case uses N=10 (Δx = 50 μm), which:
+- Exceeds the Bird criterion: Δx < λ/3 ≈ 41 μm
+- Is coarser than the grid convergence plateau (N ≈ 34)
+
+**Mitigation:** Grid coarsening was shown to **raise** the computed drag (wrong direction to explain the ~49% deficit), so the deficit is physical, not numerical. But the 5–10 μm results are "bounds, not fully grid-converged production points".
+
+### 12.6 ✅ No Experimental Validation
+
+**Problem:** All validation is against analytical references (Epstein, Baines). No experimental deceleration measurements exist.
+
+**Impact:** The ~49% large-droplet offset remains unresolved between:
+- Genuine finite-Knudsen physics (the most likely explanation)
+- Differences between CLL kernel and the analytical diffuse/specular blend
+
+---
+
+## 13. `in.drag` vs `in.steadystate_proof` vs `validation_in.drag`
+
+| Feature | `in.drag` | `in.steadystate_proof` | `validation_in.drag` |
+|---------|-----------|------------------------|-----------------------|
+| **Purpose** | Production runs | Steady-state proof | α=1 control case |
+| **Phase structure** | Phase 1 (transient) + Phase 2 (steady) as separate `run` commands | Single continuous `run` | Phase 1 + Phase 2 |
+| **Force recording** | Starts after Phase 1 (only steady window) | Starts at step 0 (transient + steady) | Starts after Phase 1 |
+| **Output** | Cumulative force + block averages | Time series every RECORD_EVERY steps + cumulative | Same as `in.drag` plus global force |
+| **Accommodation** | α = 0.3 (from `surf_collide` in template) | α = 0.3 | α = 1.0 (hard-coded) |
+| **Recording rate** | Dumps once at end of steady window | Dumps every RECORD_EVERY steps | Same as `in.drag` plus global every 1000 steps |
+| **When to use** | All production cases | Verifying steady-state convergence | Checking α=1 vs diffuse theory |
+
+---
+
+## 14. Quick Reference Tables
+
+### 14.1 Pipeline Script Summary
+
+| Script | Purpose | Input File | Output Dir | Typical Runtime |
+|--------|---------|------------|------------|-----------------|
+| `run_30case_matrix.sh` | Full production sweep | `in.drag` | `production_output/` | 5–10 hours |
+| `run_refinement.sh` | Grid convergence | `in.drag` | `runtime_output/` | 10–30 min |
+| `run_fnum_refinement.sh` | Particle convergence | `in.drag` | `runtime_output/` | 10–30 min |
+| `run_time_refinement.sh` | Timestep convergence | `in.drag` | `runtime_output/` | 10–30 min |
+| `run_mesh_refinement.sh` | Surface mesh convergence | `in.drag` | `runtime_output/` | 10–30 min |
+| `run_null.sh` | F₀ calibration | `in.drag` | `production_output/` | 5 min |
+| `run_steadystate_proof.sh` | Steady-state proof | `in.steadystate_proof` | `runtime_output/steadystate_proof/` | 1–2 hours |
+| `run_alpha1_single.sh` | α=1 control | `validation_in.drag` | `runtime_output/` | 30 min |
+
+### 14.2 MATLAB Post-Processing Script Summary
+
+| Script | Figure/Report Section | Depends On |
+|--------|-----------------------|------------|
+| `plot_matrix_results.m` | Fig 5.1, Section 5.1 | `matrix_results_*.csv` |
+| `theoretical_validation.m` | Fig 5.2, Section 5.2 | `matrix_results_*.csv` |
+| `fdrag_Velocity_validation.m` | Fig 5.3, Section 5.2 | `matrix_results_*.csv` |
+| `validation_F_vs_v_S.m` | Figs 5.4–5.6 | `matrix_results_*.csv` (auto-detects newest) |
+| `Fdrag_v_d_influence.m` | Section 5.1 | `matrix_results_*.csv` |
+| `stopping_distance_analysis.m` | Fig 6.1, Section 6.1 | `matrix_results_*.csv` |
+| `velocity_vs_distance_posprocessing.m` | Fig 6.2, Section 6.1 | `matrix_results_*.csv` |
+| `safe_zone_pp_clean.m` | Fig 6.3, Section 6.2 | `matrix_results_*.csv` |
+| `safe_zone_pp.m` | Fig 6.3 (older) | `matrix_results_*.csv` |
+| `steadystate_proof_plot.m` | Fig 4.1, Section 4.1 | `ss_proof_*_timeseries.txt` |
+| `steadystate_convergence.m` | Section 4.1 diagnostic | `*_blocks.txt` |
+| `refinement_postprocessing.m` | Fig 4.3 | `grid_convergence_*.csv` |
+| `grid_conv_1706.m` | Fig 4.3 (older) | `grid_convergence_*.csv` |
+| `fnum_postprocessing.m` | Fig 4.4 | `fnum_convergence_*.csv` |
+| `timestep_postprocessing.m` | Fig 4.5 | `time_convergence_*.csv` |
+| `mesh_refinement_postprocessing.m` | — | `mesh_convergence_*.csv` |
+| `particle_animation.m` | Visualisation utility | None (self-contained) |
+
+### 14.3 Dynamic Optimiser Parameters (from `compute_optimal_params`)
+
+| Diameter | Velocity (m/s) | Grid N | fnum | dt (s) | Total Steps | PPC |
+|----------|---------------|--------|------|--------|-------------|-----|
+| 100 nm | 20 | 40 | 3 | 5.84e-11 | 50000 | ~8 |
+| 100 nm | 700 | 40 | 3 | 5.84e-11 | 50000 | ~8 |
+| 1 μm | 20 | 18 | 10588 | 1.30e-09 | 50000 | ~25 |
+| 1 μm | 700 | 18 | 10588 | 1.30e-09 | 50000 | ~25 |
+| 10 μm | 20 | 10 | 6.17e7 | 2.34e-08 | 50000 | ~0.8 |
+| 10 μm | 700 | 10 | 6.17e7 | 2.34e-08 | 50000 | ~0.8 |
+
+Note: The 10 μm PPC appears very low (~0.8) but this is acceptable because:
+- Kn ≈ 12 → very few intermolecular collisions → PPC requirement is relaxed
+- The averaging window of 25,000 steps compensates for per-step statistical noise
+- The fnum is capped at 6.17e7 to limit total particles to ~1.5M (performance bound)
+
+---
+
+## Final Checklist: Running Everything from Scratch
+
+If you receive this repository and need to reproduce all results:
+
+```
+Step 1: Build SPARTA from source                    (§3.2)
+Step 2: Update SPARTA paths in all scripts           (§3.3)
+Step 3: Run quick test to verify SPARTA works        (§6.2)
+Step 4: Run grid convergence study                   (§6.3)
+Step 5: Run zero-velocity calibration                (§6.4)
+Step 6: Run timestep convergence study               (§6.6)
+Step 7: Run fnum convergence study                   (§6.7)
+Step 8: Run steady-state proof                       (§6.8)
+Step 9: Run production 30-case matrix sweep          (§6.5)  [OVERNIGHT]
+Step 10: Run α=1 control case                        (§6.9)
+Step 11: Open MATLAB and run post-processing         (§7)
+Step 12: (Optional) Generate 2D flow viz video       (§8)
+Step 13: Compile the report                          (§9)

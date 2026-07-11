@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Handover Guide</title>
+<meta name="color-scheme" content="light" />
+<!-- Pinned CDN libraries (no "latest"): Markdown parser + HTML sanitizer -->
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" defer></script>
+<style>
+  :root{
+    --blue:#0F238C;
+    --white:#FFFFFF;
+    --text:#111111;
+    --border:#e2e2e6;
+    --border-strong:#c9c9d0;
+    --code-bg:#f5f6f8;
+    --muted:#5b5b64;
+    --header-h:56px;
+    --sidebar-w:288px;
+    --readw:820px;
+  }
+
+  *{ box-sizing:border-box; }
+  html{ scroll-behavior:auto; }
+  body{
+    margin:0;
+    font-family:Arial, Helvetica, sans-serif;
+    color:var(--text);
+    background:var(--white);
+    font-size:16px;
+    line-height:1.62;
+    -webkit-text-size-adjust:100%;
+  }
+
+  /* ---------- Accessibility ---------- */
+  .skip-link{
+    position:absolute; left:8px; top:-48px;
+    background:var(--white); color:var(--blue);
+    padding:8px 12px; border:1px solid var(--blue); border-radius:4px;
+    z-index:60;
+  }
+  .skip-link:focus{ top:8px; }
+  :focus-visible{ outline:2px solid var(--blue); outline-offset:2px; border-radius:2px; }
+
+  /* ---------- Header ---------- */
+  .site-header{
+    position:sticky; top:0; z-index:50;
+    height:var(--header-h);
+    background:var(--blue); color:var(--white);
+    display:flex; align-items:center; gap:12px;
+    padding:0 16px;
+    border-bottom:1px solid var(--blue);
+  }
+  .site-title{
+    font-size:1.05rem; font-weight:700; margin:0;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    line-height:1.25;
+  }
+  .site-header a{ color:var(--white); }
+  .site-header :focus-visible{ outline-color:var(--white); }
+  .menu-btn{
+    display:none;
+    background:transparent; color:var(--white);
+    border:1px solid rgba(255,255,255,0.6); border-radius:5px;
+    font:inherit; font-size:0.9rem; padding:6px 10px; cursor:pointer;
+    flex:0 0 auto;
+  }
+  .menu-btn:hover{ background:rgba(255,255,255,0.12); }
+
+  /* ---------- Layout ---------- */
+  .layout{
+    display:flex;
+    align-items:flex-start;
+    max-width:1180px; margin:0 auto;
+  }
+  .toc{
+    flex:0 0 var(--sidebar-w);
+    width:var(--sidebar-w);
+    position:sticky; top:var(--header-h);
+    height:calc(100vh - var(--header-h));
+    overflow:auto;
+    border-right:1px solid var(--border);
+    padding:22px 18px 40px;
+  }
+  .toc-title{
+    font-size:0.78rem; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--muted); margin:0 0 12px; font-weight:700;
+  }
+  .toc-list{ list-style:none; margin:0; padding:0; }
+  .toc-list li{ margin:0; }
+  .toc-list a{
+    display:block; text-decoration:none; color:var(--text);
+    padding:5px 10px; border-left:2px solid transparent; border-radius:0 4px 4px 0;
+    font-size:0.9rem;
+  }
+  .toc-list a:hover{ background:var(--code-bg); }
+  .toc-list a.active{
+    color:var(--blue); font-weight:700;
+    border-left-color:var(--blue); background:var(--code-bg);
+  }
+  .toc-list .toc-h3 a{ padding-left:24px; font-size:0.85rem; color:var(--muted); }
+  .toc-list .toc-h3 a.active{ color:var(--blue); }
+
+  .main{ flex:1 1 auto; min-width:0; }
+  .content{
+    max-width:var(--readw);
+    margin:0 auto;
+    padding:34px 24px 96px;
+  }
+
+  /* ---------- Typography ---------- */
+  .content h1,.content h2,.content h3,.content h4,.content h5,.content h6{
+    line-height:1.25; scroll-margin-top:calc(var(--header-h) + 12px);
+    position:relative;
+  }
+  .content h1{ font-size:1.9rem; margin:0.2em 0 0.5em; }
+  .content h2{
+    font-size:1.5rem; margin:2em 0 0.6em; padding-bottom:0.28em;
+    border-bottom:1px solid var(--border);
+  }
+  .content h3{ font-size:1.2rem; margin:1.6em 0 0.5em; }
+  .content h4{ font-size:1.03rem; margin:1.35em 0 0.4em; }
+  .content h5,.content h6{ font-size:0.95rem; margin:1.2em 0 0.4em; }
+  .content p{ margin:0.75em 0; }
+  .content a{ color:var(--blue); text-decoration:underline; text-underline-offset:2px; }
+  .content a:hover{ text-decoration:none; }
+  .content ul,.content ol{ padding-left:1.5em; margin:0.7em 0; }
+  .content li{ margin:0.28em 0; }
+  .content hr{ border:0; border-top:1px solid var(--border); margin:2em 0; }
+  .content blockquote{
+    margin:1em 0; padding:0.4em 1em;
+    border-left:4px solid var(--border-strong); color:var(--muted);
+    background:var(--code-bg);
+  }
+  .content img{ max-width:100%; height:auto; }
+
+  /* Heading anchor links */
+  .anchor{
+    text-decoration:none; color:var(--blue);
+    margin-left:0.4em; opacity:0; font-weight:400;
+  }
+  .content h1:hover .anchor,.content h2:hover .anchor,
+  .content h3:hover .anchor,.content h4:hover .anchor,
+  .content h5:hover .anchor,.content h6:hover .anchor,
+  .anchor:focus{ opacity:1; }
+
+  /* ---------- Inline & block code ---------- */
+  .content code{
+    font-family:Consolas, "Courier New", monospace;
+    font-size:0.9em; background:var(--code-bg);
+    padding:0.15em 0.4em; border-radius:4px;
+    border:1px solid var(--border);
+  }
+  .code-wrap{ position:relative; margin:1em 0; }
+  .content pre{
+    margin:0; background:var(--code-bg);
+    border:1px solid var(--border); border-radius:6px;
+    padding:14px 16px; overflow-x:auto;
+  }
+  .content pre code{
+    background:transparent; border:0; padding:0;
+    font-size:0.86rem; line-height:1.55; white-space:pre;
+  }
+  .copy-btn{
+    position:absolute; top:8px; right:8px;
+    background:var(--white); color:var(--blue);
+    border:1px solid var(--border-strong); border-radius:5px;
+    font:inherit; font-size:0.75rem; font-weight:700;
+    padding:4px 9px; cursor:pointer; opacity:0.85;
+  }
+  .copy-btn:hover{ opacity:1; background:var(--blue); color:var(--white); border-color:var(--blue); }
+
+  /* ---------- Tables ---------- */
+  .table-wrap{ overflow-x:auto; margin:1.1em 0; border:1px solid var(--border); border-radius:6px; }
+  .content table{ border-collapse:collapse; width:100%; font-size:0.92rem; }
+  .content th,.content td{
+    border-bottom:1px solid var(--border); border-right:1px solid var(--border);
+    padding:9px 12px; text-align:left; vertical-align:top;
+  }
+  .content th:last-child,.content td:last-child{ border-right:0; }
+  .content thead th{ background:var(--blue); color:var(--white); border-bottom:0; white-space:nowrap; }
+  .content tbody tr:last-child td{ border-bottom:0; }
+
+  /* ---------- Admonitions ---------- */
+  .admonition{
+    margin:1em 0; padding:12px 14px;
+    background:var(--code-bg);
+    border:1px solid var(--border);
+    border-left:4px solid var(--blue);
+    border-radius:0 6px 6px 0;
+  }
+  .admonition--warning,.admonition--critical{ border-left-width:6px; }
+
+  /* ---------- Back to top ---------- */
+  .to-top{
+    position:fixed; right:18px; bottom:18px; z-index:40;
+    display:none;
+    background:var(--blue); color:var(--white);
+    border:0; border-radius:6px;
+    font:inherit; font-size:0.82rem; font-weight:700;
+    padding:9px 13px; cursor:pointer;
+    box-shadow:0 1px 4px rgba(15,35,140,0.28);
+  }
+  .to-top.show{ display:block; }
+  .to-top:hover{ background:#0b1c72; }
+
+  /* ---------- Mobile backdrop ---------- */
+  .backdrop{
+    display:none; position:fixed; inset:var(--header-h) 0 0 0; z-index:44;
+    background:rgba(17,17,17,0.4);
+  }
+
+  /* ---------- States ---------- */
+  .loading{ padding:48px 24px; color:var(--muted); max-width:var(--readw); margin:0 auto; }
+  .error-box{
+    max-width:var(--readw); margin:40px auto; padding:18px 20px;
+    border:1px solid var(--border-strong); border-left:5px solid var(--blue);
+    border-radius:0 6px 6px 0; background:var(--code-bg);
+  }
+  .error-box h2{ margin:0 0 8px; font-size:1.15rem; }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width:860px){
+    .menu-btn{ display:inline-block; }
+    .toc{
+      position:fixed; top:var(--header-h); left:0; z-index:45;
+      height:calc(100vh - var(--header-h));
+      width:min(84%, 320px);
+      background:var(--white);
+      border-right:1px solid var(--border-strong);
+      transform:translateX(-100%);
+      transition:transform 0.25s ease;
+      box-shadow:2px 0 8px rgba(0,0,0,0.08);
+    }
+    body.nav-open .toc{ transform:translateX(0); }
+    body.nav-open .backdrop{ display:block; }
+    .content{ padding:26px 18px 90px; }
+  }
+
+  /* ---------- Print ---------- */
+  @media print{
+    .site-header,.toc,.to-top,.copy-btn,.menu-btn,.backdrop,.skip-link,.anchor{ display:none !important; }
+    .layout{ display:block; max-width:none; }
+    .content{ max-width:none; padding:0; }
+    .content a{ color:var(--text); }
+    .content pre,.table-wrap{ overflow:visible; }
+    .content h2{ border-bottom:1px solid #000; }
+  }
+</style>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+
+  <header class="site-header">
+    <button class="menu-btn" id="menuBtn" type="button" aria-controls="toc" aria-expanded="false">Contents</button>
+    <h1 class="site-title" id="siteTitle">Handover Guide</h1>
+  </header>
+
+  <div class="backdrop" id="backdrop" hidden></div>
+
+  <div class="layout">
+    <nav class="toc" id="toc" aria-label="Table of contents">
+      <p class="toc-title">Contents</p>
+      <ul class="toc-list" id="tocList"></ul>
+    </nav>
+    <main class="main">
+      <article class="content" id="content">
+        <div class="loading">Loading the handover guide&hellip;</div>
+      </article>
+    </main>
+  </div>
+
+  <button class="to-top" id="toTop" type="button">&uarr; Back to top</button>
+
+<script>
+(function(){
+  "use strict";
+
+  var GUIDE_FILE = "Wrote HANDOVER_GUIDE.txt";
+  var content  = document.getElementById("content");
+  var tocList  = document.getElementById("tocList");
+  var siteTitle= document.getElementById("siteTitle");
+
+  /* GitHub-compatible heading slugger (keeps duplicates unique). */
+  function makeSlugger(){
+    var seen = Object.create(null);
+    return function(text){
+      var base = String(text).toLowerCase().trim()
+        .replace(/[^\w\s-]/g, "")   // drop punctuation, keep letters/digits/_/space/-
+        .replace(/\s/g, "-");        // each whitespace char -> single hyphen (GitHub style)
+      var slug = base, n = 0;
+      while (seen[slug]) { n += 1; slug = base + "-" + n; }
+      seen[slug] = true;
+      return slug;
+    };
+  }
+
+  function showError(){
+    content.innerHTML =
+      '<div class="error-box" role="alert">' +
+        '<h2>Guide not loaded</h2>' +
+        '<p>The handover guide could not be loaded. Make sure ' +
+        '<code>Wrote HANDOVER_GUIDE.txt</code> is in the same folder as ' +
+        '<code>index.html</code>. Open the page through GitHub Pages or a ' +
+        'local HTTP server rather than directly through <code>file://</code>.</p>' +
+      '</div>';
+    tocList.innerHTML = "";
+  }
+
+  /* Wrap each <pre> and add a copy button. */
+  function addCodeCopy(){
+    var pres = content.querySelectorAll("pre");
+    for (var i = 0; i < pres.length; i++){
+      var pre = pres[i];
+      var wrap = document.createElement("div");
+      wrap.className = "code-wrap";
+      pre.parentNode.insertBefore(wrap, pre);
+      wrap.appendChild(pre);
+
+      var btn = document.createElement("button");
+      btn.className = "copy-btn";
+      btn.type = "button";
+      btn.textContent = "Copy";
+      (function(pre, btn){
+        btn.addEventListener("click", function(){
+          var code = pre.querySelector("code");
+          var text = code ? code.innerText : pre.innerText;
+          function done(ok){ btn.textContent = ok ? "Copied" : "Failed";
+            setTimeout(function(){ btn.textContent = "Copy"; }, 1500); }
+          if (navigator.clipboard && navigator.clipboard.writeText){
+            navigator.clipboard.writeText(text).then(function(){ done(true); }, function(){ fallback(); });
+          } else { fallback(); }
+          function fallback(){
+            try{
+              var ta = document.createElement("textarea");
+              ta.value = text; ta.setAttribute("readonly","");
+              ta.style.position = "absolute"; ta.style.left = "-9999px";
+              document.body.appendChild(ta); ta.select();
+              done(document.execCommand("copy"));
+              document.body.removeChild(ta);
+            }catch(e){ done(false); }
+          }
+        });
+      })(pre, btn);
+      wrap.appendChild(btn);
+    }
+  }
+
+  /* Put every table in a horizontally scrollable wrapper. */
+  function wrapTables(){
+    var tables = content.querySelectorAll("table");
+    for (var i = 0; i < tables.length; i++){
+      var t = tables[i];
+      var wrap = document.createElement("div");
+      wrap.className = "table-wrap";
+      t.parentNode.insertBefore(wrap, t);
+      wrap.appendChild(t);
+    }
+  }
+
+  /* Style paragraphs that begin with a label word. */
+  function markAdmonitions(){
+    var ps = content.querySelectorAll("p");
+    var re = /^(warning|critical|note|recommendation)\b/i;
+    for (var i = 0; i < ps.length; i++){
+      var m = ps[i].textContent.replace(/^\s+/, "").match(re);
+      if (m){
+        ps[i].classList.add("admonition", "admonition--" + m[1].toLowerCase());
+      }
+    }
+  }
+
+  /* Make external links open safely in a new tab. */
+  function fixExternalLinks(){
+    var as = content.querySelectorAll('a[href^="http"]');
+    for (var i = 0; i < as.length; i++){
+      as[i].setAttribute("target", "_blank");
+      as[i].setAttribute("rel", "noopener noreferrer");
+    }
+  }
+
+  /* Assign IDs, add anchor links, and build the sidebar TOC. */
+  function processHeadings(){
+    var slug = makeSlugger();
+
+    // Header title = document's first heading; remove it from the body.
+    var firstH1 = content.querySelector("h1");
+    if (firstH1){
+      var titleText = firstH1.textContent.trim();
+      siteTitle.textContent = titleText;
+      siteTitle.setAttribute("title", titleText);
+      document.title = titleText;
+      firstH1.parentNode.removeChild(firstH1);
+    }
+
+    var heads = content.querySelectorAll("h1,h2,h3,h4,h5,h6");
+    var tocData = [];
+    for (var i = 0; i < heads.length; i++){
+      var h = heads[i];
+      var raw = h.textContent;
+      var id = slug(raw);
+      h.id = id;
+
+      var a = document.createElement("a");
+      a.className = "anchor";
+      a.href = "#" + id;
+      a.setAttribute("aria-label", "Link to this section");
+      a.textContent = "#";
+      h.appendChild(a);
+
+      if (h.tagName === "H2" || h.tagName === "H3"){
+        tocData.push({ level: h.tagName, id: id, text: raw });
+      }
+    }
+    buildToc(tocData);
+  }
+
+  function buildToc(items){
+    if (!items.length){ tocList.innerHTML = ""; return; }
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < items.length; i++){
+      var li = document.createElement("li");
+      li.className = items[i].level === "H3" ? "toc-h3" : "toc-h2";
+      var a = document.createElement("a");
+      a.href = "#" + items[i].id;
+      a.textContent = items[i].text;
+      a.setAttribute("data-id", items[i].id);
+      li.appendChild(a);
+      frag.appendChild(li);
+    }
+    tocList.appendChild(frag);
+  }
+
+  /* Highlight the current section in the TOC while scrolling. */
+  function initScrollSpy(){
+    var links = tocList.querySelectorAll("a");
+    if (!links.length || !("IntersectionObserver" in window)) return;
+    var map = {};
+    var targets = [];
+    for (var i = 0; i < links.length; i++){
+      var id = links[i].getAttribute("data-id");
+      map[id] = links[i];
+      var el = document.getElementById(id);
+      if (el) targets.push(el);
+    }
+    var current = null;
+    var obs = new IntersectionObserver(function(entries){
+      for (var j = 0; j < entries.length; j++){
+        if (entries[j].isIntersecting){
+          if (current) current.classList.remove("active");
+          current = map[entries[j].target.id];
+          if (current) current.classList.add("active");
+        }
+      }
+    }, { rootMargin: "-10% 0px -75% 0px", threshold: 0 });
+    for (var k = 0; k < targets.length; k++) obs.observe(targets[k]);
+  }
+
+  /* ---------- Mobile menu ---------- */
+  function initMenu(){
+    var btn = document.getElementById("menuBtn");
+    var backdrop = document.getElementById("backdrop");
+    var toc = document.getElementById("toc");
+    function setNav(open){
+      document.body.classList.toggle("nav-open", open);
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      backdrop.hidden = !open;
+    }
+    btn.addEventListener("click", function(){
+      setNav(!document.body.classList.contains("nav-open"));
+    });
+    backdrop.addEventListener("click", function(){ setNav(false); });
+    toc.addEventListener("click", function(e){
+      if (e.target.tagName === "A") setNav(false);
+    });
+    document.addEventListener("keydown", function(e){
+      if (e.key === "Escape") setNav(false);
+    });
+  }
+
+  /* ---------- Back to top ---------- */
+  function initToTop(){
+    var btn = document.getElementById("toTop");
+    window.addEventListener("scroll", function(){
+      btn.classList.toggle("show", window.pageYOffset > 400);
+    }, { passive: true });
+    btn.addEventListener("click", function(){ window.scrollTo(0, 0); });
+  }
+
+  /* ---------- Render pipeline ---------- */
+  function render(markdown){
+    if (typeof marked === "undefined" || typeof DOMPurify === "undefined"){
+      content.innerHTML =
+        '<div class="error-box" role="alert"><h2>Libraries not loaded</h2>' +
+        '<p>The Markdown rendering libraries could not be loaded. Check your ' +
+        'internet connection and reload the page.</p></div>';
+      return;
+    }
+    marked.setOptions({ gfm: true, breaks: false, headerIds: false, mangle: false });
+    var rawHtml = marked.parse(markdown);
+    content.innerHTML = DOMPurify.sanitize(rawHtml);
+
+    processHeadings();
+    wrapTables();
+    addCodeCopy();
+    markAdmonitions();
+    fixExternalLinks();
+    initScrollSpy();
+
+    // If the page loaded with a hash, jump to it now that IDs exist.
+    if (location.hash){
+      var target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+      if (target) target.scrollIntoView();
+    }
+  }
+
+  function load(){
+    fetch(GUIDE_FILE)
+      .then(function(res){
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.text();
+      })
+      .then(render)
+      .catch(function(){ showError(); });
+  }
+
+  function start(){ initMenu(); initToTop(); load(); }
+
+  if (document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", start);
+  } else { start(); }
+})();
+</script>
+</body>
+</html>
