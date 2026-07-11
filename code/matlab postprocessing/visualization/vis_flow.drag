@@ -1,0 +1,59 @@
+##################################################################
+# 2D Flow Visualization — H₂ Molecules Around Tin Sphere
+# Run: mpirun -np 4 sparta_mpi < vis_flow.drag
+# Output: image*.ppm frames → convert to video with ffmpeg
+##################################################################
+seed                12345
+dimension           2
+global              gridcut 0.0
+
+boundary            o r p
+
+create_box          0 10 0 10 -0.5 0.5
+create_grid         40 40 1
+balance_grid        rcb cell
+
+# Gas density: n = P/(k·T) = 100/(1.38e-23·293) = 2.47e22 m^-3
+# fnum: statistical weight (lower = more particles = better visuals)
+# For ~100 particles per cell and 1600 cells: fnum ≈ 2.47e22·(0.25^3)/100 ≈ 3.9e17
+# Use fnum 1e16 for ~4000 particles/cell (dense visual)
+# Using fnum 1e17 as a balance
+# fnum: higher = fewer particles (faster), lower = denser visuals
+# With cell vol ~0.0625 and nrho=2.47e22:
+#   fnum=5e18  → ~300 particles/cell (dense, good visuals)
+#   fnum=1e20  → ~15 particles/cell (sparse, faster)
+global              nrho 2.47e22 fnum 5e18
+
+# H₂ gas (from your simulation)
+species             ../global_assets/hydrogen.species H2
+mixture             air H2 vstream 100.0 0 0
+
+# 2D circle surface (tin droplet cross-section)
+read_surf           1 vis_circle.surf
+
+# CLL surface model (same as your 3D simulation: α=0.3)
+surf_collide        1 cll 293.0 0.3 0.3 0.3 0.0
+surf_modify         all collide 1
+
+# No intermolecular collisions (free-molecular, Kn >> 1)
+collide             none
+
+# Injection from left boundary
+fix                 in inflow air xlo
+
+timestep            5e-5
+
+# Image dump: every 20 steps, color particles by x-velocity
+# Red = fast rightward, blue = slow/leftward (shows flow pattern)
+dump                2 image 20 image.*.ppm vx vx pdiam 0.08 &
+                    surf proc 0.02 size 800 600 axes yes 0.9 0.02
+dump_modify         2 pad 4
+
+stats               200
+stats_style         step cpu np nattempt ncoll nscoll nscheck
+
+# Phase 1: transient (flow establishes)
+run                 500
+
+# Phase 2: steady (capture frames for video)
+run                 4000
