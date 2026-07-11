@@ -1,0 +1,11 @@
+================================================================
+  STEADY-STATE PROOF RUN — 20260617_124942
+  SPARTA: /home/ilozano/sparta/src/spa_mpi
+  MPI cores: 4
+================================================================
+
+CASE: d100nm_v700
+  d=100e-9 m | v=700 m/s | Kn=1216.98
+  Grid=40^3 | fnum=3 | dt=4.3187e-11 s
+  Transient=50000 | Steady=50000 | Total=100000
+  Output: ../runtime_output/steadystate_proof/ss_proof_d100nm_v700_20260617_124942_timeseries.txt
